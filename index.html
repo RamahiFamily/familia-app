@@ -259,7 +259,6 @@
       <div class="card">
         <div class="card-title"><span class="dot"></span>Market & World Brief</div>
         <div id="news-brief" style="font-family:'Montserrat',sans-serif;font-size:0.78rem;line-height:1.6; color:var(--text);padding:10px;background:var(--card2);border-radius:8px; border-left:3px solid var(--accent);margin-bottom:12px; font-style:italic;min-height:48px;"> Loading brief... </div>
-        <div id="news-headlines" style="max-height:200px;overflow-y:auto;scrollbar-width:thin;"></div>
       </div>
     </div>
     <div>
@@ -319,21 +318,20 @@
       <div class="card">
         <div class="card-title">
           <span class="dot" style="background:var(--purple)"></span>
-          Outfit Inspiration
+          Zara & H&M Inspiration (AI)
         </div>
-        <div id="outfit-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-family:'DM Mono',monospace;font-size:0.56rem;color:var(--muted2);"> 📷 Pexels </span>
-          <button onclick="loadOutfits(true)" style="border:1px solid var(--border2);background:transparent; color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.62rem; padding:5px 10px;border-radius:7px;cursor:pointer;"> ↻ New Looks </button>
+        <div id="outfits-container" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;"></div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:8px;">
+          <button onclick="loadOutfits(true)" style="border:1px solid var(--border2);background:transparent; color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.62rem; padding:5px 10px;border-radius:7px;cursor:pointer;"> ↻ Generate New Looks </button>
         </div>
       </div>
     </div>
     <div>
       <div class="card">
         <div class="card-title">
-          <span class="dot" style="background:var(--purple)"></span>Featured Recipe
+          <span class="dot" style="background:var(--purple)"></span>Featured Recipes
         </div>
-        <div style="width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden; position:relative;background:#000;margin-bottom:12px;">
+        <div style="width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden; position:relative;background:#000;margin-bottom:8px;">
           <img id="recipe-img" src="" alt="recipe" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0.85;">
           <div style="position:absolute;bottom:0;left:0;right:0; background:linear-gradient(transparent,rgba(0,0,0,0.85));padding:14px;">
             <div id="recipe-title" style="font-family:'Instrument Serif',serif;font-size:1.1rem; color:#fff;font-style:italic;margin-bottom:4px;"></div>
@@ -341,6 +339,13 @@
             <div id="recipe-meta" style="font-family:'DM Mono',monospace;font-size:0.6rem; color:rgba(255,255,255,0.6);display:flex;gap:12px;"></div>
           </div>
         </div>
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card2); padding:8px 12px; border-radius:8px; margin-bottom:12px; border:1px solid var(--border2);">
+           <button onclick="changeRecipe(-1)" style="background:transparent; border:none; color:var(--purple); font-family:'Syne',sans-serif; font-size:0.7rem; font-weight:bold; cursor:pointer; padding:4px;">◀ Prev</button>
+           <span id="recipe-counter" style="font-family:'DM Mono',monospace; font-size:0.65rem; color:var(--muted2);">Loading...</span>
+           <button onclick="changeRecipe(1)" style="background:transparent; border:none; color:var(--purple); font-family:'Syne',sans-serif; font-size:0.7rem; font-weight:bold; cursor:pointer; padding:4px;">Next ▶</button>
+        </div>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
           <div>
             <div style="font-family:'DM Mono',monospace;font-size:0.58rem; text-transform:uppercase;letter-spacing:0.1em;color:var(--muted2); margin-bottom:6px;">Ingredients</div>
@@ -436,11 +441,6 @@
 
   <div class="sp-section">
     <div class="sp-section-title">Data & Security</div>
-    <div class="sp-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
-      <div style="font-size:0.8rem;">Blink Cameras</div>
-      <div style="font-size:0.7rem; color:var(--muted2);">Manage your home security cameras via the Blink app.</div>
-      <button onclick="window.open('https://blinkforhome.com/','_blank')" style="background:var(--card2); border:1px solid var(--border2); color:var(--text); padding:8px 12px; border-radius:7px; width:100%; font-family:'Syne',sans-serif; cursor:pointer;">Open Blink →</button>
-    </div>
     <div class="sp-row" style="border:none;">
       <div style="font-size:0.8rem;">Clear Local Data</div>
       <button onclick="if(confirm('Clear all local data?')) { localStorage.clear(); sessionStorage.clear(); location.reload(); }" style="background:var(--card2); border:1px solid var(--red); color:var(--red); padding:6px 12px; border-radius:7px; font-family:'Syne',sans-serif; cursor:pointer;">Clear All Data</button>

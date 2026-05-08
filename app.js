@@ -6,9 +6,7 @@ const CONFIG = {
   WEATHER_CITY:      'Newington,CT,US',
   PHONE:             '1860798577',
   SLIDESHOW_SPEED:   5000,
-  NEWS_KEY:          'ca38c78594f84d46ad1e36c63276d9b8',
-  GEMINI_KEY:        'AIzaSyDYsZiybG8lY-SIwkJ4Ye7KjgLCwjLWgsk',
-  PEXELS_KEY:        'PrZrvPl6N4jISjj2ehsAmYPwhaHq2Kc3JEdPgaeusXMfmWl0oWxktdue',
+  GEMINI_KEY:        'AIzaSyDYsZiybG8lY-SIwkJ4Ye7KjgLCwjLWgsk'
 };
 
 const sb = (CONFIG.SUPABASE_URL !== 'YOUR_SUPABASE_URL') ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
@@ -376,8 +374,18 @@ async function callGemini(prompt, maxTokens) {
   }
 }
 
+function getWisdomCacheKey() {
+  var d = new Date();
+  if (d.getHours() < 6) {
+    var y = new Date(d);
+    y.setDate(y.getDate() - 1);
+    return 'gemini_wisdom_' + y.toDateString();
+  }
+  return 'gemini_wisdom_' + d.toDateString();
+}
+
 async function loadIslamicWisdom(elementId) {
-  var cacheKey = 'gemini_wisdom_' + new Date().toDateString();
+  var cacheKey = getWisdomCacheKey();
   var cached = localStorage.getItem(cacheKey);
 
   if (cached) {
@@ -424,60 +432,57 @@ function renderWisdom(elementId, wisdom) {
     '— ' + wisdom.source + '</div>';
 }
 
+function getNewsScheduleKey() {
+  var d = new Date();
+  var h = d.getHours();
+  var bucket = 23;
+  var dateStr = d.toDateString();
+  
+  if (h < 6) {
+    var y = new Date(d);
+    y.setDate(y.getDate() - 1);
+    dateStr = y.toDateString();
+    bucket = 23;
+  } else if (h < 11) bucket = 6;
+  else if (h < 15) bucket = 11;
+  else if (h < 18) bucket = 15;
+  else if (h < 23) bucket = 18;
+  else bucket = 23;
+  
+  return 'gemini_news_' + dateStr + '_' + bucket;
+}
+
 async function loadNewsBrief() {
-  var now = new Date();
-  var hourKey = 'gemini_news_' + now.toDateString() + '_' + now.getHours();
-  var cached = localStorage.getItem(hourKey);
-
+  var cacheKey = getNewsScheduleKey();
+  var cached = localStorage.getItem(cacheKey);
   var briefEl = document.getElementById('news-brief');
-  var headlinesEl = document.getElementById('news-headlines');
-
-  var headlines = [];
-  try {
-    var proxy = 'https://corsproxy.io/?';
-    var newsUrl = 'https://newsapi.org/v2/top-headlines?category=business&language=en&pageSize=6&apiKey=' + CONFIG.NEWS_KEY;
-    var r = await fetch(proxy + encodeURIComponent(newsUrl));
-    var d = await r.json();
-    if (d.articles) {
-      headlines = d.articles.map(function(a) { return a.title; });
-    }
-  } catch(e) {}
-
-  try {
-    var proxy2 = 'https://corsproxy.io/?';
-    var sportsUrl = 'https://newsapi.org/v2/top-headlines?category=sports&language=en&pageSize=4&apiKey=' + CONFIG.NEWS_KEY;
-    var r2 = await fetch(proxy2 + encodeURIComponent(sportsUrl));
-    var d2 = await r2.json();
-    if (d2.articles) {
-      d2.articles.forEach(function(a) { headlines.push(a.title); });
-    }
-  } catch(e) {}
-
-  if (headlinesEl && headlines.length > 0) {
-    headlinesEl.innerHTML = headlines.slice(0,6).map(function(h) {
-      return '<div style="padding:8px 0;border-bottom:1px solid var(--border);' +
-        'font-size:0.78rem;line-height:1.4;">' + h + '</div>';
-    }).join('');
-  }
 
   if (cached) {
-    if (briefEl) briefEl.textContent = cached;
+    if (briefEl) briefEl.innerHTML = cached;
     return;
   }
+  
+  if (briefEl) briefEl.innerHTML = '<i>Generating latest brief (updates at 6AM, 11AM, 3PM, 6PM, 11PM)...</i>';
 
-  if (headlines.length > 0) {
-    var prompt = 'Here are today\'s top news headlines:\n' +
-      headlines.slice(0,8).join('\n') + '\n\n' +
-      'Write a 2-3 sentence market and world summary in plain English. ' +
-      'Be concise, informative, and direct. No bullet points. Just a short paragraph.';
+  var prompt = 'Write a daily briefing with exactly 4 sections: 1. World News, 2. Economy, 3. Soccer, 4. Cars. Each section must be exactly 2-3 sentences. Do not use markdown headers. Return ONLY a valid JSON object in this exact format: {"world":"...","economy":"...","soccer":"...","cars":"..."}';
+  var result = await callGemini(prompt, 600);
 
-    var brief = await callGemini(prompt, 150);
-    if (brief) {
-      localStorage.setItem(hourKey, brief);
-      if (briefEl) briefEl.textContent = brief;
+  if (result) {
+    try {
+      var d = JSON.parse(result.replace(/```json|```/g,'').trim());
+      var html = 
+        '<div style="margin-bottom:10px;"><b>🌍 World:</b> ' + d.world + '</div>' +
+        '<div style="margin-bottom:10px;"><b>📈 Economy:</b> ' + d.economy + '</div>' +
+        '<div style="margin-bottom:10px;"><b>⚽ Soccer:</b> ' + d.soccer + '</div>' +
+        '<div><b>🚗 Cars:</b> ' + d.cars + '</div>';
+      
+      localStorage.setItem(cacheKey, html);
+      if (briefEl) briefEl.innerHTML = html;
+    } catch(e) {
+      if (briefEl) briefEl.textContent = 'AI failed to format brief. Retrying shortly...';
     }
   } else {
-    if (briefEl) briefEl.textContent = 'Markets active today. Check back for latest updates.';
+    if (briefEl) briefEl.textContent = 'AI Brief unavailable. Check API key or connection.';
   }
 }
 
@@ -547,85 +552,93 @@ function renderDeals(deals) {
   }).join('');
 }
 
-var _outfitPage = parseInt(localStorage.getItem('outfit_page') || '1');
-
 async function loadOutfits(refresh) {
-  if (refresh) {
-    _outfitPage++;
-    if (_outfitPage > 15) _outfitPage = 1;
-    localStorage.setItem('outfit_page', _outfitPage);
+  var cacheKey = 'gemini_outfits_' + new Date().toDateString();
+  if (refresh) localStorage.removeItem(cacheKey);
+  var cached = localStorage.getItem(cacheKey);
+  var el = document.getElementById('outfits-container');
+
+  if (cached) {
+     try { renderOutfits(JSON.parse(cached)); return; } catch(e) {}
   }
+  if (el && refresh) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Generating 10 fresh looks...</span>';
 
-  var QUERIES = ['modest fashion outfit','elegant women style',
-    'casual chic women','minimalist outfit women',
-    'professional women fashion','summer women outfit',
-    'feminine style aesthetic','modern abaya fashion',
-    'boho women style','street fashion women',
-    'autumn women outfit','cozy fashion women',
-    'evening style women','neutral tones fashion'];
-
-  var dayIdx = Math.floor(Date.now() / 86400000);
-  var query = QUERIES[dayIdx % QUERIES.length];
-  var el = document.getElementById('outfit-grid');
-
-  try {
-    var r = await fetch(
-      'https://api.pexels.com/v1/search?query=' +
-      encodeURIComponent(query) + '&per_page=2&page=' + _outfitPage,
-      { headers: { Authorization: CONFIG.PEXELS_KEY } }
-    );
-    var d = await r.json();
-    if (d.photos && d.photos.length >= 2 && el) {
-      el.innerHTML = d.photos.slice(0,2).map(function(p) {
-        return '<div style="border-radius:12px;overflow:hidden;aspect-ratio:2/3;">' +
-          '<img src="' + p.src.medium + '" alt="outfit" ' +
-          'style="width:100%;height:100%;object-fit:cover;display:block;">' +
-          '</div>';
-      }).join('');
-    }
-  } catch(e) {
-    if (el) el.innerHTML =
-      '<div style="aspect-ratio:2/3;background:var(--card2);border-radius:12px;' +
-      'display:flex;align-items:center;justify-content:center;font-size:2.5rem;">👗</div>' +
-      '<div style="aspect-ratio:2/3;background:var(--card2);border-radius:12px;' +
-      'display:flex;align-items:center;justify-content:center;font-size:2.5rem;">✨</div>';
+  var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array of 10 objects in this format: [{"title":"Chic Blazer Look", "desc":"Oversized blazer with high waisted trousers."}]';
+  
+  var result = await callGemini(prompt, 600);
+  var looks = [];
+  
+  if (result) {
+     try {
+        looks = JSON.parse(result.replace(/```json|```/g,'').trim());
+        if (looks.length > 0) localStorage.setItem(cacheKey, JSON.stringify(looks));
+     } catch(e) {}
   }
+  
+  if (looks.length === 0) looks = [{title:'Fall Layering', desc:'Trench coat with knit sweater.'}]; // fallback
+  renderOutfits(looks);
 }
+
+function renderOutfits(looks) {
+  var el = document.getElementById('outfits-container');
+  if (!el) return;
+  var images = [
+    'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80',
+    'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80',
+    'https://images.unsplash.com/photo-1485230895905-eb56f66378ea?w=400&q=80',
+    'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&q=80',
+    'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80',
+    'https://images.unsplash.com/photo-1495385794356-15371f348c31?w=400&q=80',
+    'https://images.unsplash.com/photo-1532453288672-3a27e9be9efd?w=400&q=80',
+    'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80',
+    'https://images.unsplash.com/photo-1502716119720-b23a93e5fe1b?w=400&q=80',
+    'https://images.unsplash.com/photo-1529139574466-a303027c1d8b?w=400&q=80'
+  ];
+  
+  el.innerHTML = looks.map(function(look, i) {
+     var img = images[i % images.length];
+     return '<div style="flex-shrink:0;width:140px;background:var(--card2);border-radius:10px;overflow:hidden;border:1px solid var(--border);">' +
+       '<img src="' + img + '" style="width:100%;height:160px;object-fit:cover;">' +
+       '<div style="padding:10px;">' +
+         '<div style="font-family:\'Syne\',sans-serif;font-size:0.65rem;font-weight:700;color:var(--text);margin-bottom:4px;line-height:1.2;">' + (look.title||'Look') + '</div>' +
+         '<div style="font-family:\'Montserrat\',sans-serif;font-size:0.58rem;color:var(--muted2);line-height:1.4;">' + (look.desc||'') + '</div>' +
+       '</div>' +
+     '</div>';
+  }).join('');
+}
+
+var _hayaRecipes = [];
+var _hayaRecipeIdx = 0;
 
 async function loadRecipe() {
   var today = new Date().toDateString();
-  var cacheKey = 'gemini_recipe_' + today;
+  var cacheKey = 'gemini_recipes_array_' + today;
   var cached = localStorage.getItem(cacheKey);
 
   if (cached) {
-    try { renderRecipe(JSON.parse(cached)); return; } catch(e) {}
+    try { 
+      _hayaRecipes = JSON.parse(cached);
+      renderRecipe(_hayaRecipes[_hayaRecipeIdx]); 
+      return; 
+    } catch(e) {}
   }
 
-  var prompt = 'Generate one authentic Arab/Jordanian/Levantine recipe inspired by ' +
-    'the cooking style of Ola Tashman (Jordanian food influencer). ' +
-    'Choose from: Mansaf, Musakhan, Knafeh, Fattet Hummus, Maqlouba, Kibbeh, ' +
-    'Zarb, Sayadieh, Maqluba, Arayes, Shawarma, or any authentic Levantine dish. ' +
-    'Return ONLY valid JSON, no other text:\n' +
-    '{"title":"","description":"one sentence","time":45,"servings":4,' +
-    '"ingredients":["item 1","item 2"],' +
-    '"steps":["Step 1 text","Step 2 text"],' +
-    '"tip":"Chef tip from Ola Tashman style"}';
+  var prompt = 'Generate 5 different authentic Jordanian/Levantine recipes inspired by the cooking style of Ola Tashman. Return ONLY a valid JSON array of exactly 5 objects. Format for each object: {"title":"","description":"","time":45,"servings":4,"ingredients":["item 1"],"steps":["step 1"],"tip":""}';
 
-  var result = await callGemini(prompt, 500);
-  var recipe = null;
+  var result = await callGemini(prompt, 1500);
 
   if (result) {
     try {
       var clean = result.replace(/```json|```/g,'').trim();
-      recipe = JSON.parse(clean);
-      if (recipe && recipe.title) {
-        localStorage.setItem(cacheKey, JSON.stringify(recipe));
+      _hayaRecipes = JSON.parse(clean);
+      if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
+        localStorage.setItem(cacheKey, JSON.stringify(_hayaRecipes));
       }
     } catch(e) {}
   }
 
-  if (!recipe) {
-    recipe = {
+  if (!_hayaRecipes || _hayaRecipes.length === 0) {
+    _hayaRecipes = [{
       title: 'Traditional Mansaf',
       description: 'Jordan\'s national dish — slow-cooked lamb in jameed broth over rice.',
       time: 90, servings: 6,
@@ -637,26 +650,33 @@ async function loadRecipe() {
         'Cook rice in lamb broth with turmeric.',
         'Layer flatbread, rice, lamb, jameed sauce. Garnish with pine nuts.'],
       tip: 'The key is stirring the jameed sauce continuously without boiling.'
-    };
+    }];
   }
 
+  renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+}
+
+function changeRecipe(dir) {
+  if (!_hayaRecipes || !_hayaRecipes.length) return;
+  _hayaRecipeIdx += dir;
+  if (_hayaRecipeIdx < 0) _hayaRecipeIdx = _hayaRecipes.length - 1;
+  if (_hayaRecipeIdx >= _hayaRecipes.length) _hayaRecipeIdx = 0;
+  renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+}
+
+function renderRecipe(recipe) {
+  if (!recipe) return;
+  
   var FOOD_IMAGES = [
     'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=600&q=80',
     'https://images.unsplash.com/photo-1598103442097-8b74394b95c9?w=600&q=80',
     'https://images.unsplash.com/photo-1519676867240-f03562e64548?w=600&q=80',
     'https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=600&q=80',
-    'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&q=80',
-    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&q=80',
-    'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80',
+    'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&q=80'
   ];
-  var dayIdx = Math.floor(Date.now() / 86400000);
-  recipe._image = FOOD_IMAGES[dayIdx % FOOD_IMAGES.length];
-  renderRecipe(recipe);
-}
-
-function renderRecipe(recipe) {
+  
   var imgEl = document.getElementById('recipe-img');
-  if (imgEl && recipe._image) imgEl.src = recipe._image;
+  if (imgEl) imgEl.src = FOOD_IMAGES[_hayaRecipeIdx % FOOD_IMAGES.length];
 
   var titleEl = document.getElementById('recipe-title');
   if (titleEl) titleEl.textContent = recipe.title || '';
@@ -668,6 +688,9 @@ function renderRecipe(recipe) {
   if (metaEl) metaEl.innerHTML =
     '<span>⏱ ' + (recipe.time||'--') + ' min</span> ' +
     '<span>👥 ' + (recipe.servings||'--') + ' servings</span>';
+
+  var counterEl = document.getElementById('recipe-counter');
+  if (counterEl) counterEl.textContent = 'Recipe ' + (_hayaRecipeIdx + 1) + ' of ' + _hayaRecipes.length;
 
   var ingEl = document.getElementById('recipe-ingredients');
   if (ingEl && recipe.ingredients) {
@@ -1001,10 +1024,19 @@ async function initApp() {
   fetchStocks();
   setInterval(fetchStocks, 60000);
 
+  // Load initially
   loadIslamicWisdom('wisdom-mahmoud');
   loadIslamicWisdom('wisdom-haya');
   loadNewsBrief();
-  setInterval(loadNewsBrief, 3600000);
+  
+  // Checking every 60 seconds ensures we catch the exact moment 
+  // the hour hits 6AM, 11AM, 3PM, 6PM, or 11PM for News, and 6AM for Wisdom!
+  setInterval(function() {
+     loadNewsBrief(); 
+     loadIslamicWisdom('wisdom-mahmoud');
+     loadIslamicWisdom('wisdom-haya');
+  }, 60000); 
+
   loadDeals();
   loadOutfits(false);
   loadRecipe();
