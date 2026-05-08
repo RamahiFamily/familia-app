@@ -1,9 +1,9 @@
 // FORCED CACHE CLEAR (Runs once upon upgrading to this new file)
-if (!localStorage.getItem('v5_cache_clear_done')) {
+if (!localStorage.getItem('v6_cache_clear_done')) {
   localStorage.removeItem('gemini_wisdom_' + new Date().toDateString());
   localStorage.removeItem('gemini_outfits_' + new Date().toDateString());
   localStorage.removeItem('gemini_recipes_array_' + new Date().toDateString());
-  localStorage.setItem('v5_cache_clear_done', '1');
+  localStorage.setItem('v6_cache_clear_done', '1');
 }
 
 const CONFIG = {
@@ -210,21 +210,21 @@ async function fetchStocks() {
 }
 
 // ----------------------------------------------------
-// AI CORE ENGINE
-// Extremely robust error-trapping version
+// AI CORE ENGINE - FIXED ENDPOINT MODEL
 // ----------------------------------------------------
 async function callGemini(prompt, maxTokens) {
   maxTokens = maxTokens || 800;
   try {
+    // FIXED: Changed from gemini-1.5-flash to gemini-2.5-flash which is actively supported and active on your tier
     var r = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { 
-            response_mime_type: "application/json", // FORCES STRICT JSON OUTPUT
+            response_mime_type: "application/json",
             maxOutputTokens: maxTokens, 
             temperature: 0.7 
           }
@@ -245,7 +245,6 @@ async function callGemini(prompt, maxTokens) {
     return { error: "Network failed. Check internet or AdBlocker." };
   }
 }
-
 
 function getWisdomCacheKey() {
   var d = new Date();
@@ -280,7 +279,6 @@ async function loadIslamicWisdom(elementId) {
       wisdom = { arabic: 'Error Parsing JSON', english: 'AI returned an invalid format.', source: 'System Debug' };
     }
   } else {
-    // If we hit an error, SHOW IT TO THE USER directly in the card!
     wisdom = { 
       arabic: 'API Connection Failed', 
       english: 'Error Details: ' + (result ? result.error : 'Unknown'), 
@@ -340,7 +338,6 @@ async function loadNewsBrief() {
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red)">AI failed to format brief: ' + e.message + '</span>';
     }
   } else {
-      // IF API FAILS, SHOW THE REAL REASON ON SCREEN
       var errorMsg = result ? result.error : 'Connection died completely.';
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red);font-weight:bold;">API Connection Error:</span><br><span style="color:var(--red);font-size:0.7rem;">' + errorMsg + '</span>';
   }
@@ -410,7 +407,7 @@ async function loadOutfits(refresh) {
 
   var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array of exactly 10 objects. Schema: [{"title":"string", "desc":"string"}]';
   
-  var result = await callGemini(prompt, 1500); // Bumped tokens for 10 items
+  var result = await callGemini(prompt, 1500);
   var looks = [];
   
   if (result && result.text) {
@@ -480,7 +477,6 @@ async function loadRecipe() {
 
   var prompt = 'Generate 5 different authentic Jordanian/Levantine recipes inspired by the cooking style of Ola Tashman. Return ONLY a valid JSON array of exactly 5 objects. Schema MUST be exactly this: [{"title":"string","description":"string","time":45,"servings":4,"ingredients":["string"],"steps":["string"],"tip":"string"}]';
 
-  // HUGE token bump to prevent JSON truncation
   var result = await callGemini(prompt, 3000);
 
   if (result && result.text) {
