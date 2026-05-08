@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Familia - Supabase Setup & Test</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --card: #16161f;
+      --card2: #1c1c28;
+      --border: rgba(255,255,255,0.13);
+      --text: #e8e8f0;
+      --muted: #8888a0;
+      --accent: #4f9cf9;
+      --green: #34d399;
+      --red: #ff5f5f;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'DM Mono', monospace; padding: 40px 20px;
+      max-width: 600px; margin: 0 auto;
+    }
+    h1 { font-family: 'Syne', sans-serif; color: var(--accent); }
+    .card { background: var(--card); border: 1px solid var(--border); padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    input { width: 100%; padding: 10px; margin: 10px 0; background: var(--card2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; box-sizing: border-box; }
+    button { background: var(--accent); color: var(--bg); border: none; padding: 10px 20px; font-family: 'Syne', sans-serif; font-weight: bold; border-radius: 6px; cursor: pointer; }
+    pre { background: var(--card2); padding: 15px; border-radius: 6px; overflow-x: auto; color: var(--green); border: 1px solid var(--border); }
+    #status { margin-top: 15px; padding: 10px; border-radius: 6px; display: none; }
+  </style>
+</head>
+<body>
+
+  <h1>Supabase Utility</h1>
+  <p style="color: var(--muted);">Use this tool to test your connection and get the SQL commands needed for the Familia app.</p>
+
+  <div class="card">
+    <h2>1. Required SQL Schema</h2>
+    <p style="font-size: 0.85rem; color: var(--muted);">Go to your Supabase project -> SQL Editor -> New Query, and run this exact code to create the table your app needs:</p>
+    <pre><code>CREATE TABLE familia_data (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Optional: Set up Row Level Security (RLS) to allow anon access for testing
+ALTER TABLE familia_data ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anonymous read/write" ON familia_data FOR ALL USING (true) WITH CHECK (true);</code></pre>
+  </div>
+
+  <div class="card">
+    <h2>2. Test Connection</h2>
+    <input type="text" id="sb-url" placeholder="Your Supabase URL (https://...)">
+    <input type="text" id="sb-key" placeholder="Your Supabase Anon Key (eyJ...)">
+    <button onclick="testConnection()">Test Connection</button>
+    
+    <div id="status"></div>
+  </div>
+
+  <script>
+    async function testConnection() {
+      const url = document.getElementById('sb-url').value.trim();
+      const key = document.getElementById('sb-key').value.trim();
+      const statusEl = document.getElementById('status');
+      
+      if (!url || !key) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = 'rgba(255,95,95,0.1)';
+        statusEl.style.color = 'var(--red)';
+        statusEl.innerHTML = 'Please enter both URL and Key.';
+        return;
+      }
+
+      statusEl.style.display = 'block';
+      statusEl.style.background = 'transparent';
+      statusEl.style.color = 'var(--text)';
+      statusEl.innerHTML = 'Testing connection...';
+
+      try {
+        const supabase = window.supabase.createClient(url, key);
+        const { data, error } = await supabase.from('familia_data').select('*').limit(1);
+
+        if (error) {
+          throw error;
+        }
+
+        statusEl.style.background = 'rgba(52,211,153,0.1)';
+        statusEl.style.color = 'var(--green)';
+        statusEl.innerHTML = '✓ Connection successful! The `familia_data` table exists and is accessible.';
+      } catch (err) {
+        statusEl.style.background = 'rgba(255,95,95,0.1)';
+        statusEl.style.color = 'var(--red)';
+        statusEl.innerHTML = '✗ Connection failed: ' + err.message + '<br><br>Did you run the SQL query above?';
+      }
+    }
+  </script>
+
+</body>
+</html>

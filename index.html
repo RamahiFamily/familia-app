@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Familia Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --card: #16161f;
+      --card2: #1c1c28;
+      --border: rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.13);
+      --text: #e8e8f0;
+      --muted: #5a5a72;
+      --muted2: #8888a0;
+      --accent: #4f9cf9;
+      --green: #34d399;
+      --gold: #f59e0b;
+      --red: #ff5f5f;
+      --purple: #c084fc;
+    }
+    body, html {
+      margin: 0; padding: 0;
+      background: var(--bg); color: var(--text);
+      font-family: 'Montserrat', sans-serif;
+      overflow-x: hidden; width: 100%;
+    }
+    * { box-sizing: border-box; }
+    
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-sizing: border-box;
+      min-width: 0; width: 100%;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .card::after {
+      content: ''; position: absolute;
+      top: 0; left: 15%; right: 15%; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(79,156,249,0.15), transparent);
+    }
+    .card-title {
+      font-family: 'Syne', sans-serif; font-size: 0.58rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted2);
+      margin-bottom: 12px; display: flex; align-items: center; gap: 6px;
+    }
+    .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+    
+    .dashboard { padding: 12px 16px; max-width: 100%; box-sizing: border-box; display: none; }
+    .dashboard.active { display: block; }
+    
+    .grid-3col {
+      display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 12px;
+      width: 100%; box-sizing: border-box;
+    }
+    .grid-3col > * { min-width: 0; box-sizing: border-box; width: 100%; }
+    
+    .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    
+    @media (max-width: 768px) {
+      .grid-3col, .grid-2col { grid-template-columns: 1fr; }
+    }
+    
+    header {
+      position: sticky; top: 0; z-index: 500; height: 52px;
+      background: rgba(10,10,15,0.92); backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border); padding: 0 20px;
+      display: flex; align-items: center; gap: 16px; box-sizing: border-box;
+    }
+    
+    #login-screen {
+      position: fixed; inset: 0; z-index: 2000; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    #login-screen::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(circle at top, rgba(79,156,249,0.08) 0%, transparent 60%); pointer-events: none;
+    }
+    
+    #settings-panel {
+      position: fixed; top: 0; right: -380px; width: 360px; height: 100vh;
+      background: var(--card); border-left: 1px solid var(--border2);
+      z-index: 900; transition: right 0.3s ease; overflow-y: auto; padding: 24px 20px; box-sizing: border-box;
+    }
+    #settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 890; display: none; }
+    .sp-section { margin-bottom: 24px; }
+    .sp-section-title { font-family: 'DM Mono', monospace; font-size: 0.6rem; uppercase; letter-spacing: 0.12em; color: var(--muted2); margin-bottom: 12px; text-transform: uppercase; }
+    .sp-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    
+    button { cursor: pointer; }
+    input { outline: none; }
+    
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .tab { font-family: 'DM Mono', monospace; font-size: 0.65rem; color: var(--muted2); padding: 4px 10px; border-radius: 5px; cursor: pointer; text-transform: uppercase; }
+    .tab.active { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    
+    @keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    .ticker-item { display: inline-flex; align-items: center; white-space: nowrap; }
+    
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div style="text-align:center; margin-bottom:40px;">
+    <div style="font-family:'Instrument Serif',serif; font-size:3.2rem; letter-spacing:-0.04em;">familia<span style="color:var(--accent); font-style:italic;">.</span></div>
+    <div style="font-family:'DM Mono',monospace; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.15em; color:var(--muted2);">your private family space</div>
+  </div>
+  <div style="background:var(--card); border:1px solid var(--border2); border-radius:20px; padding:32px 28px; max-width:340px; width:100%; position:relative; overflow:hidden;">
+    <div style="position:absolute; top:0; left:15%; right:15%; height:1px; background:linear-gradient(90deg, transparent, rgba(79,156,249,0.15), transparent);"></div>
+    <div style="font-family:'DM Mono',monospace; font-size:0.6rem; text-transform:uppercase; color:var(--muted2); margin-bottom:8px;">Password</div>
+    <input id="login-pwd" type="password" style="width:100%; font-family:'DM Mono',monospace; font-size:1rem; letter-spacing:0.1em; padding:13px 16px; margin-bottom:12px; border-radius:8px; border:1px solid var(--border2); background:var(--card2); color:var(--text);" onkeydown="if(event.key==='Enter') checkLogin()">
+    <button onclick="checkLogin()" style="width:100%; background:var(--accent); font-family:'Syne',sans-serif; font-weight:700; font-size:0.82rem; text-transform:uppercase; padding:14px; border-radius:7px; border:none; color:var(--bg);">Enter</button>
+    <div id="login-err" style="font-family:'DM Mono',monospace; font-size:0.68rem; color:var(--red); min-height:18px; margin-top:12px; text-align:center;"></div>
+  </div>
+</div>
+
+<header>
+  <div style="font-family:'Instrument Serif',serif; font-size:1.3rem;">familia<span style="color:var(--accent); font-style:italic;">.</span></div>
+  <div id="live-clock" style="font-family:'DM Mono',monospace; font-size:0.72rem; color:var(--muted2);"></div>
+  <div style="flex:1;"></div>
+  <div style="display:flex; background:var(--card); border:1px solid var(--border); border-radius:50px; padding:3px; gap:3px;">
+    <button class="profile-btn active" onclick="switchProfile('home', this)" style="background:var(--accent); color:var(--bg); font-family:'Syne',sans-serif; font-size:0.65rem; font-weight:700; text-transform:uppercase; padding:5px 14px; border-radius:50px; border:none;">Home</button>
+    <button class="profile-btn" onclick="switchProfile('mahmoud', this)" style="background:transparent; color:var(--muted2); font-family:'Syne',sans-serif; font-size:0.65rem; font-weight:700; text-transform:uppercase; padding:5px 14px; border-radius:50px; border:none;">Mahmoud</button>
+    <button class="profile-btn" onclick="switchProfile('haya', this)" style="background:transparent; color:var(--muted2); font-family:'Syne',sans-serif; font-size:0.65rem; font-weight:700; text-transform:uppercase; padding:5px 14px; border-radius:50px; border:none;">Haya</button>
+  </div>
+  <button onclick="openSettings()" style="background:transparent; border:1px solid var(--border); color:var(--muted2); border-radius:7px; padding:6px 10px;">⚙</button>
+  <button onclick="sessionStorage.removeItem('f_auth'); location.reload();" style="background:transparent; border:1px solid var(--border); color:var(--muted2); border-radius:7px; padding:6px 10px;">🔒</button>
+</header>
+
+<!-- HOME DASHBOARD -->
+<div id="dash-home" class="dashboard active">
+  <div class="grid-3col">
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Weather</div>
+        <div class="weather-basic" style="margin-bottom:12px;"></div>
+        <div id="weather-hourly"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--gold)"></span>Prayer Times</div>
+        <div id="prayer-countdown" style="background:rgba(245,158,11,0.1); padding:12px; border-radius:10px; margin-bottom:12px; text-align:center;">
+          Loading next prayer...
+        </div>
+        <div id="prayer-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        <div style="margin-top:12px; font-size:0.6rem; color:var(--muted2); text-align:center;">Adhan Audio Status: <span id="adhan-dot" style="color:var(--green)">Ready</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Family Media</div>
+        <div style="width:100%; aspect-ratio:4/3; background:#000; border-radius:10px; overflow:hidden; position:relative;">
+          <div id="media-container" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
+            <span style="color:var(--muted2); font-size:0.7rem;">No media loaded</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Family Budget</div>
+        <div id="budget-total" style="font-family:'DM Mono',monospace; font-size:1.8rem; color:var(--text); margin-bottom:12px;">$0</div>
+        <div id="budget-list" style="margin-bottom:12px;"></div>
+        <details style="font-size:0.7rem; color:var(--muted2);">
+          <summary style="cursor:pointer; margin-bottom:8px;">+ Add Category</summary>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <input id="b-name" type="text" placeholder="Name" style="flex:1; padding:6px; font-size:0.7rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;">
+            <input id="b-amount" type="number" placeholder="Amount" style="width:80px; padding:6px; font-size:0.7rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;">
+            <button onclick="addBudgetCat()" style="padding:6px 10px; background:var(--accent); color:var(--bg); border:none; border-radius:5px;">Add</button>
+          </div>
+        </details>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--green)"></span>Grocery List</div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input id="groc-input" type="text" placeholder="Add item..." style="flex:1; padding:8px 12px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:7px;" onkeydown="if(event.key==='Enter') addListItem('grocery_list', 'groc-input')">
+          <button onclick="addListItem('grocery_list', 'groc-input')" style="padding:0 14px; background:var(--accent); border:none; color:var(--bg); border-radius:7px;">+</button>
+        </div>
+        <div id="groc-list" style="max-height:200px; overflow-y:auto; margin-bottom:12px;"></div>
+        <button onclick="window.open('https://wa.me/?text=Grocery+List+Updated', '_blank')" style="width:100%; background:var(--green); color:#000; padding:8px; margin-bottom:12px; border:none; border-radius:7px; font-family:'Syne',sans-serif; font-weight:700; cursor:pointer;">Share via WhatsApp</button>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <div style="font-family:'DM Mono',monospace;font-size:0.58rem; letter-spacing:0.1em;text-transform:uppercase;color:var(--muted2); margin-bottom:8px;">Local Deals</div>
+          <div id="deals-row" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px; scrollbar-width:none;"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>House Goals</div>
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab(this)">Weekly</div>
+          <div class="tab" onclick="switchTab(this)">Monthly</div>
+          <div class="tab" onclick="switchTab(this)">Yearly</div>
+        </div>
+        <div class="tab-panel active" id="hgoals-0">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="hg-input-0" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('home_goals_0', 'hg-input-0')">
+            <button onclick="addGoal('home_goals_0', 'hg-input-0')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="hgoals-1">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="hg-input-1" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('home_goals_1', 'hg-input-1')">
+            <button onclick="addGoal('home_goals_1', 'hg-input-1')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="hgoals-2">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="hg-input-2" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('home_goals_2', 'hg-input-2')">
+            <button onclick="addGoal('home_goals_2', 'hg-input-2')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAHMOUD DASHBOARD -->
+<div id="dash-mahmoud" class="dashboard">
+  <div style="overflow:hidden;background:var(--card2);border-top:1px solid var(--border); border-bottom:1px solid var(--border);padding:8px 0;margin-bottom:12px;">
+    <div id="ticker-inner" style="display:flex;gap:0;animation:tickerScroll 40s linear infinite; width:max-content;align-items:center;"></div>
+  </div>
+  <div class="grid-3col">
+    <div>
+      <div class="card weather-card">
+        <div class="card-title"><span class="dot"></span>Weather</div>
+        <div class="weather-basic">Loading...</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--gold)"></span>Daily Wisdom</div>
+        <div id="wisdom-mahmoud"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Al Jazeera Live</div>
+        <div id="cnbc-container" style="width:100%;aspect-ratio:16/9;background:#000;border-radius:10px; overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;">
+          <div id="cnbc-placeholder" style="text-align:center;cursor:pointer;" onclick="loadCNBC()">
+            <div style="width:64px;height:64px;background:var(--accent);border-radius:50%; display:flex;align-items:center;justify-content:center; font-size:1.6rem;margin:0 auto 12px;transition:transform 0.2s;">▶</div>
+            <div style="font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--muted2);"> Tap to load Al Jazeera </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button onclick="loadCNBC()" style="flex:1;background:var(--card2);border:1px solid var(--border2); color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.62rem; padding:7px;border-radius:7px;cursor:pointer;"> ▶ Load Stream </button>
+          <button onclick="window.open('https://www.youtube.com/@aljazeeraenglish/live','_blank')" style="flex:1;background:var(--card2);border:1px solid var(--border2); color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.62rem; padding:7px;border-radius:7px;cursor:pointer;"> ↗ Open YouTube </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Market & World Brief</div>
+        <div id="news-brief" style="font-family:'Montserrat',sans-serif;font-size:0.78rem;line-height:1.6; color:var(--text);padding:10px;background:var(--card2);border-radius:8px; border-left:3px solid var(--accent);margin-bottom:12px; font-style:italic;min-height:48px;"> Loading brief... </div>
+        <div id="news-headlines" style="max-height:200px;overflow-y:auto;scrollbar-width:thin;"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>To-Do List</div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input id="m-todo-input" type="text" placeholder="Add task..." style="flex:1; padding:8px 12px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:7px;" onkeydown="if(event.key==='Enter') addListItem('todo_mahmoud', 'm-todo-input')">
+          <button onclick="addListItem('todo_mahmoud', 'm-todo-input')" style="padding:0 14px; background:var(--accent); border:none; color:var(--bg); border-radius:7px;">+</button>
+        </div>
+        <div id="m-todo-list" style="max-height:250px; overflow-y:auto;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot"></span>Goals Tracker</div>
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab(this)">Weekly</div>
+          <div class="tab" onclick="switchTab(this)">Monthly</div>
+          <div class="tab" onclick="switchTab(this)">Yearly</div>
+        </div>
+        <div class="tab-panel active" id="mgoals-0">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="mg-input-0" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('mahmoud_goals_0', 'mg-input-0')">
+            <button onclick="addGoal('mahmoud_goals_0', 'mg-input-0')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="mgoals-1">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="mg-input-1" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('mahmoud_goals_1', 'mg-input-1')">
+            <button onclick="addGoal('mahmoud_goals_1', 'mg-input-1')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="mgoals-2">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="mg-input-2" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('mahmoud_goals_2', 'mg-input-2')">
+            <button onclick="addGoal('mahmoud_goals_2', 'mg-input-2')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HAYA DASHBOARD -->
+<div id="dash-haya" class="dashboard">
+  <div class="grid-3col">
+    <div>
+      <div class="card weather-card">
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Weather</div>
+        <div class="weather-basic">Loading...</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--gold)"></span>Daily Wisdom</div>
+        <div id="wisdom-haya"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">
+          <span class="dot" style="background:var(--purple)"></span>
+          Outfit Inspiration
+        </div>
+        <div id="outfit-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-family:'DM Mono',monospace;font-size:0.56rem;color:var(--muted2);"> 📷 Pexels </span>
+          <button onclick="loadOutfits(true)" style="border:1px solid var(--border2);background:transparent; color:var(--muted2);font-family:'DM Mono',monospace;font-size:0.62rem; padding:5px 10px;border-radius:7px;cursor:pointer;"> ↻ New Looks </button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">
+          <span class="dot" style="background:var(--purple)"></span>Featured Recipe
+        </div>
+        <div style="width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden; position:relative;background:#000;margin-bottom:12px;">
+          <img id="recipe-img" src="" alt="recipe" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0.85;">
+          <div style="position:absolute;bottom:0;left:0;right:0; background:linear-gradient(transparent,rgba(0,0,0,0.85));padding:14px;">
+            <div id="recipe-title" style="font-family:'Instrument Serif',serif;font-size:1.1rem; color:#fff;font-style:italic;margin-bottom:4px;"></div>
+            <div id="recipe-desc" style="font-family:'Montserrat',sans-serif;font-size:0.68rem; color:rgba(255,255,255,0.75);margin-bottom:4px;"></div>
+            <div id="recipe-meta" style="font-family:'DM Mono',monospace;font-size:0.6rem; color:rgba(255,255,255,0.6);display:flex;gap:12px;"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div>
+            <div style="font-family:'DM Mono',monospace;font-size:0.58rem; text-transform:uppercase;letter-spacing:0.1em;color:var(--muted2); margin-bottom:6px;">Ingredients</div>
+            <div id="recipe-ingredients"></div>
+          </div>
+          <div>
+            <div style="font-family:'DM Mono',monospace;font-size:0.58rem; text-transform:uppercase;letter-spacing:0.1em;color:var(--muted2); margin-bottom:6px;">Steps</div>
+            <div id="recipe-steps"></div>
+          </div>
+        </div>
+        <div id="recipe-tip" style="display:none;font-family:'Montserrat',sans-serif;font-size:0.72rem; color:var(--muted2);padding:8px 10px;background:var(--card2); border-radius:7px;margin-bottom:10px;"></div>
+        <button onclick="addRecipeIngredients()" style="width:100%;background:var(--purple);border:none;color:#fff; font-family:'Syne',sans-serif;font-size:0.68rem;font-weight:700; letter-spacing:0.06em;padding:10px;border-radius:8px;cursor:pointer;">
+          + Add Ingredients to Grocery List
+        </button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>To-Do List</div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <input id="h-todo-input" type="text" placeholder="Add task..." style="flex:1; padding:8px 12px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:7px;" onkeydown="if(event.key==='Enter') addListItem('todo_haya', 'h-todo-input')">
+          <button onclick="addListItem('todo_haya', 'h-todo-input')" style="padding:0 14px; background:var(--accent); border:none; color:var(--bg); border-radius:7px;">+</button>
+        </div>
+        <div id="h-todo-list" style="max-height:250px; overflow-y:auto;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Goal Tracker</div>
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab(this)">Weekly</div>
+          <div class="tab" onclick="switchTab(this)">Monthly</div>
+          <div class="tab" onclick="switchTab(this)">Yearly</div>
+        </div>
+        <div class="tab-panel active" id="hgoals2-0">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="hg2-input-0" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('haya_goals_0', 'hg2-input-0')">
+            <button onclick="addGoal('haya_goals_0', 'hg2-input-0')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="hgoals2-1">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="hg2-input-1" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('haya_goals_1', 'hg2-input-1')">
+            <button onclick="addGoal('haya_goals_1', 'hg2-input-1')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="hgoals2-2">
+          <div class="goal-list"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input id="hg2-input-2" type="text" placeholder="Add goal..." style="flex:1; padding:6px; font-size:0.75rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" onkeydown="if(event.key==='Enter') addGoal('haya_goals_2', 'hg2-input-2')">
+            <button onclick="addGoal('haya_goals_2', 'hg2-input-2')" style="padding:0 12px; background:var(--accent); border:none; border-radius:5px; color:var(--bg);">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="settings-overlay" onclick="closeSettings()"></div>
+<div id="settings-panel">
+  <div style="font-family:'Instrument Serif',serif; font-size:2rem; margin-bottom:24px;">Settings</div>
+  
+  <div class="sp-section">
+    <div class="sp-section-title">Adhan Audio</div>
+    <div class="sp-row">
+      <div>
+        <div style="font-size:0.8rem;">Upload Adhan MP3</div>
+        <div style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted2);" id="sp-adhan-name">No file loaded</div>
+      </div>
+      <label for="adhan-file-input" style="cursor:pointer;background:var(--card2);border:1px solid var(--border2); color:var(--text);font-family:'DM Mono',monospace;font-size:0.65rem; padding:6px 12px;border-radius:7px;white-space:nowrap;"> Choose MP3 </label>
+      <input type="file" id="adhan-file-input" accept="audio/*,audio/mpeg,.mp3" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;" onchange="handleAdhanUpload(event)">
+    </div>
+    <div class="sp-row">
+      <div style="font-size:0.8rem;">Test Adhan</div>
+      <button onclick="testAdhan()" style="background:var(--accent);border:none;color:var(--bg); font-family:'Syne',sans-serif;font-size:0.65rem;font-weight:700; padding:7px 14px;border-radius:7px;cursor:pointer;"> ▶ Play </button>
+    </div>
+    <div id="adhan-test-msg" style="font-family:'DM Mono',monospace;font-size:0.62rem; color:var(--muted2);margin-top:8px;min-height:16px;"></div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-section-title">Media & Budget</div>
+    <div class="sp-row">
+      <div style="font-size:0.8rem;">Family Media Slideshow</div>
+      <label for="media-file-input" style="cursor:pointer;background:var(--card2);border:1px solid var(--border2); color:var(--text);font-family:'DM Mono',monospace;font-size:0.65rem; padding:6px 12px;border-radius:7px;white-space:nowrap;"> Choose Photos </label>
+      <input type="file" id="media-file-input" accept="image/*,video/*" multiple style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;" onchange="handleMediaLoad(event)">
+    </div>
+    <div class="sp-row" style="border:none;">
+      <div style="font-size:0.8rem;">Import CSV Budget</div>
+      <label for="csv-file-input" style="cursor:pointer;background:var(--card2);border:1px solid var(--border2); color:var(--text);font-family:'DM Mono',monospace;font-size:0.65rem; padding:6px 12px;border-radius:7px;white-space:nowrap;"> Import CSV </label>
+      <input type="file" id="csv-file-input" accept=".csv,text/csv" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;" onchange="importCSV(event)">
+    </div>
+  </div>
+
+  <div class="sp-section">
+    <div class="sp-section-title">Data & Security</div>
+    <div class="sp-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+      <div style="font-size:0.8rem;">Blink Cameras</div>
+      <div style="font-size:0.7rem; color:var(--muted2);">Manage your home security cameras via the Blink app.</div>
+      <button onclick="window.open('https://blinkforhome.com/','_blank')" style="background:var(--card2); border:1px solid var(--border2); color:var(--text); padding:8px 12px; border-radius:7px; width:100%; font-family:'Syne',sans-serif; cursor:pointer;">Open Blink →</button>
+    </div>
+    <div class="sp-row" style="border:none;">
+      <div style="font-size:0.8rem;">Clear Local Data</div>
+      <button onclick="if(confirm('Clear all local data?')) { localStorage.clear(); sessionStorage.clear(); location.reload(); }" style="background:var(--card2); border:1px solid var(--red); color:var(--red); padding:6px 12px; border-radius:7px; font-family:'Syne',sans-serif; cursor:pointer;">Clear All Data</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" style="position:fixed;bottom:24px;left:50%; transform:translateX(-50%) translateY(80px); background:var(--card2);border:1px solid var(--border2); border-radius:50px;padding:9px 20px; font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text); z-index:9999;transition:transform 0.3s;white-space:nowrap; box-shadow:0 8px 32px rgba(0,0,0,0.4);pointer-events:none;"></div>
+<audio id="adhan-player" preload="auto" style="display:none;"></audio>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="app.js"></script>
+</body>
+</html>
