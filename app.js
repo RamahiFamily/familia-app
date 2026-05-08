@@ -781,19 +781,20 @@ async function initApp() {
   fetchStocks();
   setInterval(fetchStocks, 60000);
 
-  loadIslamicWisdom('wisdom-mahmoud');
-  loadIslamicWisdom('wisdom-haya');
-  loadNewsBrief();
+  // STAGGERED LOADER: one AI request every 2s so Google free tier doesn't block
+  setTimeout(function() { loadIslamicWisdom('wisdom-mahmoud'); }, 0);
+  setTimeout(function() { loadIslamicWisdom('wisdom-haya');    }, 2000);
+  setTimeout(function() { loadNewsBrief();                     }, 4000);
+  setTimeout(function() { loadDeals();                         }, 6000);
+  setTimeout(function() { loadOutfits(false);                  }, 8000);
+  setTimeout(function() { loadRecipe();                        }, 10000);
 
+  // Hourly refresh also staggered
   setInterval(function() {
-    loadNewsBrief();
-    loadIslamicWisdom('wisdom-mahmoud');
-    loadIslamicWisdom('wisdom-haya');
-  }, 60000);
-
-  loadDeals();
-  loadOutfits(false);
-  loadRecipe();
+    setTimeout(function() { loadIslamicWisdom('wisdom-mahmoud'); }, 0);
+    setTimeout(function() { loadIslamicWisdom('wisdom-haya');    }, 2000);
+    setTimeout(function() { loadNewsBrief();                     }, 4000);
+  }, 3600000);
 
   renderList('grocery_list', 'groc-list');
   renderGoalPanel('hgoals-0', 'home_goals_0');
