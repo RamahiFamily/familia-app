@@ -7,7 +7,7 @@ const CONFIG = {
   PHONE:             '1860798577',
   SLIDESHOW_SPEED:   5000,
   NEWS_KEY:          'ca38c78594f84d46ad1e36c63276d9b8',
-  GEMINI_KEY:        'AIzaSyC-your-gemini-key-here',
+  GEMINI_KEY:        'AIzaSyDYsZiybG8lY-SIwkJ4Ye7KjgLCwjLWgsk',
   PEXELS_KEY:        'PrZrvPl6N4jISjj2ehsAmYPwhaHq2Kc3JEdPgaeusXMfmWl0oWxktdue',
 };
 
