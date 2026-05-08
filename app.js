@@ -7,7 +7,7 @@ if (!localStorage.getItem('v7_cache_clear_done')) {
 }
 
 const CONFIG = {
-  SUPABASE_URL:      'YOUR_SUPABASE_URL',
+  SUPABASE_URL:      'https://kyhbexbfmbtuhiddtvdb.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5aGJleGJmbWJ0dWhpZGR0dmRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjY0OTgsImV4cCI6MjA5MzY0MjQ5OH0.Rv2FtqZWGtHzHieCS0SmQjnGTEdSXsqrYTYfJrwddMQ',
   PASSWORD:          'familia2024',
   WEATHER_KEY:       '7a6a9fd1087d7335ccb8d3312177225c',
