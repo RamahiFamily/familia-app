@@ -69,16 +69,14 @@ function initRealtimeSync() {
   if (!sb) return;
   sb.channel('familia_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'familia_data' }, (payload) => {
-      const key = payload.new && payload.new.key;
+      const key = (payload.new && payload.new.key) || (payload.old && payload.old.key);
       if (!key) return;
       // Re-render whichever list just changed
       if (key === 'grocery_list')       renderList('grocery_list', 'groc-list');
       else if (key === 'todo_mahmoud')  renderTaskList('todo_mahmoud', 'm-todo-list');
       else if (key === 'todo_haya')     renderTaskList('todo_haya', 'h-todo-list');
       else if (key === 'budget_items')  renderBudget();
-      else if (key.startsWith('home_goals'))     renderGoalPanelList(key);
-      else if (key.startsWith('mahmoud_goals'))  renderGoalPanelList(key);
-      else if (key.startsWith('haya_goals'))     renderGoalPanelList(key);
+      else if (key.includes('goals'))   renderGoalPanelList(key);
     })
     .subscribe();
 }
