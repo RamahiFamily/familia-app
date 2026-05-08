@@ -45,15 +45,16 @@ const store = {
 
   async set(key, value) {
     const serialized = JSON.stringify(value);
-    // Always write to localStorage as backup
+    const now = new Date().toISOString();
     localStorage.setItem('f2_' + key, serialized);
+    localStorage.setItem('f2_updated_' + key, now);
     if (sb) {
       try {
         const { error } = await sb
           .from('familia_data')
           .upsert(
-            { key: key, value: serialized, updated_at: new Date().toISOString() },
-            { onConflict: 'key' }   // FIX: tell Supabase which column is the unique key
+            { key: key, value: serialized, updated_at: now },
+            { onConflict: 'key' }
           );
         if (error) throw error;
       } catch(e) {
@@ -63,28 +64,51 @@ const store = {
   }
 };
 
-// ─── SUPABASE REALTIME: re-render lists when another device changes data ───────
+// ─── SYNC: realtime + polling fallback ───────────────────────────────────────
 function initRealtimeSync() {
   if (!sb) return;
+
+  // 1. Realtime listener (instant when it works)
   sb.channel('familia_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'familia_data' }, (payload) => {
       const key = (payload.new && payload.new.key) || (payload.old && payload.old.key);
       const rawValue = payload.new && payload.new.value;
       if (!key) return;
-
-      // Write fresh value into localStorage so re-render reads correct data
       if (rawValue) localStorage.setItem('f2_' + key, rawValue);
-
-      // Re-render the right component
-      if (key === 'grocery_list')       renderList('grocery_list', 'groc-list');
-      else if (key === 'todo_mahmoud')  renderTaskList('todo_mahmoud', 'm-todo-list');
-      else if (key === 'todo_haya')     renderTaskList('todo_haya', 'h-todo-list');
-      else if (key === 'budget_items')  renderBudget();
-      else if (key.includes('goals'))   renderGoalPanelList(key);
+      syncRenderKey(key);
     })
-    .subscribe((status) => {
-      console.log('Realtime status:', status);
-    });
+    .subscribe();
+
+  // 2. Poll every 10 seconds as reliable fallback
+  setInterval(async function() {
+    const keys = [
+      'grocery_list', 'todo_mahmoud', 'todo_haya', 'budget_items',
+      'home_goals_0','home_goals_1','home_goals_2',
+      'mahmoud_goals_0','mahmoud_goals_1','mahmoud_goals_2',
+      'haya_goals_0','haya_goals_1','haya_goals_2'
+    ];
+    for (const key of keys) {
+      try {
+        const { data } = await sb.from('familia_data').select('value,updated_at').eq('key', key).maybeSingle();
+        if (!data) continue;
+        const localUpdated = localStorage.getItem('f2_updated_' + key);
+        // Only re-render if Supabase has a newer version than what we last saw
+        if (data.updated_at !== localUpdated) {
+          localStorage.setItem('f2_' + key, data.value);
+          localStorage.setItem('f2_updated_' + key, data.updated_at);
+          syncRenderKey(key);
+        }
+      } catch(e) {}
+    }
+  }, 10000);
+}
+
+function syncRenderKey(key) {
+  if (key === 'grocery_list')       renderList('grocery_list', 'groc-list');
+  else if (key === 'todo_mahmoud')  renderTaskList('todo_mahmoud', 'm-todo-list');
+  else if (key === 'todo_haya')     renderTaskList('todo_haya', 'h-todo-list');
+  else if (key === 'budget_items')  renderBudget();
+  else if (key.includes('goals'))   renderGoalPanelList(key);
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
@@ -350,10 +374,10 @@ function renderWisdom(elementId, wisdom) {
 
 // ─── NEWS BRIEF ───────────────────────────────────────────────────────────────
 function getNewsScheduleKey() {
-  var d = new Date(); var h = d.getHours(); var bucket = 23; var dateStr = d.toDateString();
-  if (h < 6) { var y = new Date(d); y.setDate(y.getDate() - 1); dateStr = y.toDateString(); bucket = 23; }
-  else if (h < 11) bucket = 6; else if (h < 15) bucket = 11; else if (h < 18) bucket = 15; else if (h < 23) bucket = 18; else bucket = 23;
-  return 'ai_news_' + dateStr + '_' + bucket;
+  // One cache per day only — saves Gemini quota on free tier
+  var d = new Date();
+  if (d.getHours() < 6) { var y = new Date(d); y.setDate(y.getDate() - 1); return 'ai_news_' + y.toDateString(); }
+  return 'ai_news_' + d.toDateString();
 }
 
 async function loadNewsBrief() {
@@ -787,20 +811,15 @@ async function initApp() {
   fetchStocks();
   setInterval(fetchStocks, 60000);
 
-  // STAGGERED LOADER: one AI request every 2s so Google free tier doesn't block
+  // STAGGERED LOADER: one AI request every 3s, only if not cached today
+  // Max 6 Gemini calls per day total — safely under the 20 free tier limit
   setTimeout(function() { loadIslamicWisdom('wisdom-mahmoud'); }, 0);
-  setTimeout(function() { loadIslamicWisdom('wisdom-haya');    }, 2000);
-  setTimeout(function() { loadNewsBrief();                     }, 4000);
-  setTimeout(function() { loadDeals();                         }, 6000);
-  setTimeout(function() { loadOutfits(false);                  }, 8000);
-  setTimeout(function() { loadRecipe();                        }, 10000);
-
-  // Hourly refresh also staggered
-  setInterval(function() {
-    setTimeout(function() { loadIslamicWisdom('wisdom-mahmoud'); }, 0);
-    setTimeout(function() { loadIslamicWisdom('wisdom-haya');    }, 2000);
-    setTimeout(function() { loadNewsBrief();                     }, 4000);
-  }, 3600000);
+  setTimeout(function() { loadIslamicWisdom('wisdom-haya');    }, 3000);
+  setTimeout(function() { loadNewsBrief();                     }, 6000);
+  setTimeout(function() { loadDeals();                         }, 9000);
+  setTimeout(function() { loadOutfits(false);                  }, 12000);
+  setTimeout(function() { loadRecipe();                        }, 15000);
+  // NO hourly refresh — cache lasts all day, Gemini only called once per feature per day
 
   renderList('grocery_list', 'groc-list');
   renderGoalPanel('hgoals-0', 'home_goals_0');
