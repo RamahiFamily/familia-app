@@ -64,21 +64,27 @@ const store = {
 };
 
 // ─── SUPABASE REALTIME: re-render lists when another device changes data ───────
-// FIX: this is why changes from a different device weren't showing
 function initRealtimeSync() {
   if (!sb) return;
   sb.channel('familia_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'familia_data' }, (payload) => {
       const key = (payload.new && payload.new.key) || (payload.old && payload.old.key);
+      const rawValue = payload.new && payload.new.value;
       if (!key) return;
-      // Re-render whichever list just changed
+
+      // Write fresh value into localStorage so re-render reads correct data
+      if (rawValue) localStorage.setItem('f2_' + key, rawValue);
+
+      // Re-render the right component
       if (key === 'grocery_list')       renderList('grocery_list', 'groc-list');
       else if (key === 'todo_mahmoud')  renderTaskList('todo_mahmoud', 'm-todo-list');
       else if (key === 'todo_haya')     renderTaskList('todo_haya', 'h-todo-list');
       else if (key === 'budget_items')  renderBudget();
       else if (key.includes('goals'))   renderGoalPanelList(key);
     })
-    .subscribe();
+    .subscribe((status) => {
+      console.log('Realtime status:', status);
+    });
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
@@ -717,7 +723,9 @@ async function renderGoalPanel(panelId, key) {
 
 async function renderGoalPanelList(key) {
   const panels = document.querySelectorAll(`[data-key="${key}"]`); if(!panels.length) return;
-  const list = await store.get(key) || [];
+  // Read from localStorage first (already updated by realtime listener) then fallback to store
+  const raw = localStorage.getItem('f2_' + key);
+  const list = raw ? JSON.parse(raw) : (await store.get(key) || []);
   const html = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" ${item.done?'checked':''} onchange="toggleGoal('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem; ${item.done?'text-decoration:line-through;color:var(--muted2);':''}">${item.text}</span></div><button onclick="deleteGoal('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
   panels.forEach(p => p.querySelector('.goal-list').innerHTML = html);
 }
