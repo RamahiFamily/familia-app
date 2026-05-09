@@ -281,30 +281,56 @@ async function fetchStocks() {
   if (updated.length >= 6) { tickerData = updated; renderTicker(); }
 }
 
-// ─── AI CORE: GEMINI via Supabase Edge Function (key never exposed) ────────────
+// ─── AI CORE: GEMINI (key stored in Supabase DB, never in code) ──────────────
+var _geminiKey = null;
+
+async function getGeminiKey() {
+  if (_geminiKey) return _geminiKey;
+  try {
+    const { data } = await sb
+      .from('familia_data')
+      .select('value')
+      .eq('key', 'config_gemini_key')
+      .maybeSingle();
+    if (data && data.value) {
+      _geminiKey = JSON.parse(data.value);
+      return _geminiKey;
+    }
+  } catch(e) {
+    console.error('Could not fetch Gemini key from Supabase:', e);
+  }
+  return null;
+}
+
 async function callGemini(prompt, maxTokens) {
   maxTokens = maxTokens || 800;
+  var key = await getGeminiKey();
+  if (!key) return { error: 'Gemini key not found in Supabase. Check config_gemini_key row.' };
   try {
     var r = await fetch(
-      'https://kyhbexbfmbtuhiddtvdb.supabase.co/functions/v1/gemini-proxy',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + key,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + CONFIG.SUPABASE_ANON_KEY
-        },
-        body: JSON.stringify({ prompt: prompt, maxTokens: maxTokens })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            response_mime_type: 'application/json',
+            maxOutputTokens: maxTokens,
+            temperature: 0.7
+          }
+        })
       }
     );
     var d = await r.json();
     if (d.error) {
-      console.error('Gemini Proxy Error:', d.error);
-      return { error: d.error.message || d.error };
+      console.error('Gemini API Error:', d.error);
+      return { error: d.error.message || 'Gemini API error' };
     }
     if (d.candidates && d.candidates[0] && d.candidates[0].content) {
       return { text: d.candidates[0].content.parts[0].text.trim() };
     }
-    return { error: 'Unknown response from proxy' };
+    return { error: 'Unknown response from Gemini' };
   } catch(e) {
     console.error('Fetch Error:', e);
     return { error: 'Network failed. Check internet connection.' };
