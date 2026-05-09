@@ -328,7 +328,8 @@ function getWisdomCacheKey() {
 }
 
 async function loadIslamicWisdom(elementId) {
-  var cacheKey = getWisdomCacheKey();
+  // Each person gets their own wisdom cache so they don't show the same quote
+  var cacheKey = getWisdomCacheKey() + '_' + elementId;
   var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById(elementId);
 
@@ -346,7 +347,7 @@ async function loadIslamicWisdom(elementId) {
     try {
       var clean = result.text.replace(/```json|```/g, '').trim();
       wisdom = JSON.parse(clean);
-      localStorage.setItem(cacheKey, JSON.stringify(wisdom));
+        localStorage.setItem(cacheKey, JSON.stringify(wisdom));
     } catch(e) {
       wisdom = { arabic: 'Parse Error', english: 'AI returned an invalid format. Try refreshing.', source: 'System' };
     }
@@ -392,12 +393,16 @@ async function loadNewsBrief() {
 
   if (briefEl) briefEl.innerHTML = '<span style="color:var(--muted2);font-style:italic;font-size:0.7rem;">Generating latest brief (updates 6AM, 11AM, 3PM, 6PM, 11PM)...</span>';
 
-  var prompt = 'Write a daily briefing with exactly 4 sections: 1. World News, 2. Economy, 3. Soccer, 4. Cars. Each section must be exactly 2-3 sentences. Do not use markdown headers. Return ONLY a valid JSON object with no markdown in this exact schema: {"world":"string","economy":"string","soccer":"string","cars":"string"}';
-  var result = await callAI(prompt, 800);
+  var prompt = 'Write a daily briefing with exactly 4 sections. Keep each section to 1-2 short sentences only. Return ONLY a valid JSON object with no markdown: {"world":"string","economy":"string","soccer":"string","cars":"string"}';
+  var result = await callAI(prompt, 600);
 
   if (result && result.text) {
     try {
       var clean = result.text.replace(/```json|```/g,'').trim();
+      // Repair truncated JSON by closing any open string/object
+      if (!clean.endsWith('}')) {
+        clean = clean.replace(/,?\s*"[^"]*$/, '').replace(/,\s*$/, '') + '}';
+      }
       var d = JSON.parse(clean);
       var html =
         '<div style="margin-bottom:10px;"><b>🌍 World:</b> ' + (d.world||'No data') + '</div>' +
@@ -443,13 +448,10 @@ async function loadDeals() {
   }
 
   if (!deals || !Array.isArray(deals)) {
-    deals = [
-      {store:"API Not Set Up", item:"Add your Claude API key to app.js CONFIG.CLAUDE_KEY", price:"--", url:"https://console.anthropic.com"},
-      {store:"Sam's Club", item:"Member's Mark Chicken 10lb", price:"$14.98", url:"https://www.samsclub.com/savings"},
-      {store:"Costco",     item:"Kirkland Olive Oil 2L",      price:"$12.49", url:"https://www.costco.com/todays-deals.html"},
-      {store:"ALDI",       item:"Whole Milk 1 Gallon",        price:"$2.99",  url:"https://www.aldi.us/en/weekly-specials/"},
-      {store:"Price Rite", item:"Basmati Rice 20lb",          price:"$14.99", url:"https://www.pricerite.com/weekly-circular"}
-    ];
+    var errMsg = result ? result.error : 'Gemini quota exceeded. Resets in 24 hours.';
+    var el2 = document.getElementById('deals-row');
+    if (el2) el2.innerHTML = '<div style="color:var(--red);font-size:0.72rem;padding:10px;">⚠️ ' + errMsg + '</div>';
+    return;
   }
   renderDeals(deals);
 }
@@ -494,8 +496,8 @@ async function loadOutfits(refresh) {
 
   if (!looks || looks.length === 0) {
     looks = [{
-      title: 'API Not Connected',
-      desc: 'Error: ' + (result ? result.error : 'Unknown. Check your Gemini API key')
+      title: 'Gemini Error',
+      desc: result ? result.error : 'Quota may be exceeded. Refreshes tomorrow.'
     }];
   }
   renderOutfits(looks);
@@ -563,12 +565,12 @@ async function loadRecipe() {
 
   if (!_hayaRecipes || _hayaRecipes.length === 0) {
     _hayaRecipes = [{
-      title: 'API Not Connected',
-      description: 'Error: ' + (result ? result.error : 'JSON Parse Failed. Check Gemini key'),
+      title: 'Gemini Error',
+      description: result ? result.error : 'Could not load recipes. Try refreshing tomorrow when quota resets.',
       time: 0, servings: 0,
-      ingredients: ['Add your Claude API key to app.js'],
-      steps: ['Paste new Gemini key into CONFIG.GEMINI_KEY'],
-      tip: 'Get a key at aistudio.google.com/app/apikey'
+      ingredients: ['Gemini quota may be exceeded — check aistudio.google.com'],
+      steps: ['Quota resets every 24 hours', 'Refresh the page tomorrow', 'Or upgrade Gemini to paid at aistudio.google.com'],
+      tip: 'Free tier allows 20 requests per day.'
     }];
   }
 
