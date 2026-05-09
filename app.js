@@ -315,7 +315,6 @@ async function callGemini(prompt, maxTokens) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            response_mime_type: 'application/json',
             maxOutputTokens: maxTokens,
             temperature: 0.7
           }
