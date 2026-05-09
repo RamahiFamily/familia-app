@@ -14,7 +14,6 @@ const CONFIG = {
   WEATHER_CITY:      'Newington,CT,US',
   PHONE:             '1860798577',
   SLIDESHOW_SPEED:   5000,
-  GEMINI_KEY:        'AIzaSyABMKrS8pRotjpw0YtMrLIIbs6o4G23aZY'   // ← paste your new key here locally
 };
 
 // ─── SUPABASE INIT ────────────────────────────────────────────────────────────
@@ -282,37 +281,33 @@ async function fetchStocks() {
   if (updated.length >= 6) { tickerData = updated; renderTicker(); }
 }
 
-// ─── AI CORE: GEMINI ──────────────────────────────────────────────────────────
+// ─── AI CORE: GEMINI via Supabase Edge Function (key never exposed) ────────────
 async function callGemini(prompt, maxTokens) {
   maxTokens = maxTokens || 800;
   try {
     var r = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
+      'https://kyhbexbfmbtuhiddtvdb.supabase.co/functions/v1/gemini-proxy',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            response_mime_type: "application/json",
-            maxOutputTokens: maxTokens,
-            temperature: 0.7
-          }
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + CONFIG.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ prompt: prompt, maxTokens: maxTokens })
       }
     );
     var d = await r.json();
     if (d.error) {
-      console.error('Gemini API Error:', d.error);
-      return { error: d.error.message || 'Invalid API Key or Blocked Request' };
+      console.error('Gemini Proxy Error:', d.error);
+      return { error: d.error.message || d.error };
     }
     if (d.candidates && d.candidates[0] && d.candidates[0].content) {
       return { text: d.candidates[0].content.parts[0].text.trim() };
     }
-    return { error: 'Unknown response structure from Google' };
+    return { error: 'Unknown response from proxy' };
   } catch(e) {
     console.error('Fetch Error:', e);
-    return { error: 'Network failed. Check internet or AdBlocker.' };
+    return { error: 'Network failed. Check internet connection.' };
   }
 }
 var callAI = callGemini;
