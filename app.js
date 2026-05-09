@@ -328,14 +328,12 @@ function getWisdomCacheKey() {
 }
 
 async function loadIslamicWisdom(elementId) {
-  // Each person gets their own wisdom cache so they don't show the same quote
   var cacheKey = getWisdomCacheKey() + '_' + elementId;
-  var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById(elementId);
 
-  if (cached) {
-    try { renderWisdom(elementId, JSON.parse(cached)); return; } catch(e) {}
-  }
+  // Check Supabase cache first (shared across all devices)
+  var cached = await store.get(cacheKey);
+  if (cached) { renderWisdom(elementId, cached); return; }
 
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Generating new wisdom...</span>';
 
@@ -347,16 +345,12 @@ async function loadIslamicWisdom(elementId) {
     try {
       var clean = result.text.replace(/```json|```/g, '').trim();
       wisdom = JSON.parse(clean);
-        localStorage.setItem(cacheKey, JSON.stringify(wisdom));
+      await store.set(cacheKey, wisdom); // save to Supabase so all devices share it
     } catch(e) {
       wisdom = { arabic: 'Parse Error', english: 'AI returned an invalid format. Try refreshing.', source: 'System' };
     }
   } else {
-    wisdom = {
-      arabic: 'API Not Connected',
-      english: 'Error: ' + (result ? result.error : 'Unknown'),
-      source: 'System'
-    };
+    wisdom = { arabic: 'API Error', english: 'Error: ' + (result ? result.error : 'Unknown'), source: 'System' };
   }
 
   renderWisdom(elementId, wisdom);
@@ -386,8 +380,10 @@ async function loadNewsBrief() {
   var cached = localStorage.getItem(cacheKey);
   var briefEl = document.getElementById('news-brief');
 
-  if (cached) {
-    if (briefEl) briefEl.innerHTML = cached;
+  // Check Supabase cache (shared across all devices)
+  var cachedObj = await store.get(cacheKey);
+  if (cachedObj) {
+    if (briefEl) briefEl.innerHTML = cachedObj;
     return;
   }
 
@@ -410,7 +406,7 @@ async function loadNewsBrief() {
         '<div style="margin-bottom:10px;"><b>⚽ Soccer:</b> ' + (d.soccer||'No data') + '</div>' +
         '<div><b>🚗 Cars:</b> ' + (d.cars||'No data') + '</div>';
 
-      localStorage.setItem(cacheKey, html);
+      await store.set(cacheKey, html); // save to Supabase so all devices share it
       if (briefEl) briefEl.innerHTML = html;
     } catch(e) {
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red)">AI failed to format brief: ' + e.message + '</span>';
@@ -427,9 +423,8 @@ async function loadDeals() {
   var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById('deals-row');
 
-  if (cached) {
-    try { renderDeals(JSON.parse(cached)); return; } catch(e) {}
-  }
+  var cachedDeals = await store.get(cacheKey);
+  if (cachedDeals) { renderDeals(cachedDeals); return; }
 
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Fetching today\'s deals...</span>';
 
@@ -442,7 +437,7 @@ async function loadDeals() {
       var clean = result.text.replace(/```json|```/g,'').trim();
       deals = JSON.parse(clean);
       if (Array.isArray(deals) && deals.length >= 5) {
-        localStorage.setItem(cacheKey, JSON.stringify(deals));
+        await store.set(cacheKey, deals); // save to Supabase so all devices share it
       }
     } catch(e) {}
   }
@@ -475,9 +470,8 @@ async function loadOutfits(refresh) {
   var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById('outfits-container');
 
-  if (cached) {
-    try { renderOutfits(JSON.parse(cached)); return; } catch(e) {}
-  }
+  var cachedOutfits = await store.get(cacheKey);
+  if (cachedOutfits) { renderOutfits(cachedOutfits); return; }
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Generating 10 fresh looks from Zara & H&M...</span>';
 
   var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array with no markdown of exactly 10 objects. Schema: [{"title":"string", "desc":"string"}]';
@@ -489,7 +483,7 @@ async function loadOutfits(refresh) {
       var clean = result.text.replace(/```json|```/g,'').trim();
       looks = JSON.parse(clean);
       if (Array.isArray(looks) && looks.length > 0) {
-        localStorage.setItem(cacheKey, JSON.stringify(looks));
+        await store.set(cacheKey, looks); // save to Supabase so all devices share it
       }
     } catch(e) {}
   }
@@ -542,12 +536,11 @@ async function loadRecipe() {
   var counterEl = document.getElementById('recipe-counter');
   if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
 
-  if (cached) {
-    try {
-      _hayaRecipes = JSON.parse(cached);
-      renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
-      return;
-    } catch(e) {}
+  var cachedRecipes = await store.get(cacheKey);
+  if (cachedRecipes) {
+    _hayaRecipes = cachedRecipes;
+    renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+    return;
   }
 
   var prompt = 'Generate 5 different authentic Jordanian/Levantine recipes inspired by the cooking style of Ola Tashman. Return ONLY a valid JSON array with no markdown of exactly 5 objects. Schema MUST be exactly this: [{"title":"string","description":"string","time":45,"servings":4,"ingredients":["string"],"steps":["string"],"tip":"string"}]';
@@ -558,7 +551,7 @@ async function loadRecipe() {
       var clean = result.text.replace(/```json|```/g,'').trim();
       _hayaRecipes = JSON.parse(clean);
       if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
-        localStorage.setItem(cacheKey, JSON.stringify(_hayaRecipes));
+        await store.set(cacheKey, _hayaRecipes); // save to Supabase so all devices share it
       }
     } catch(e) {}
   }
