@@ -124,9 +124,16 @@ function showToast(msg) {
 }
 
 function switchProfile(profile, btn) {
-  document.querySelectorAll('.profile-btn').forEach(function(b) { b.classList.remove('active'); });
+  // Update all buttons — reset inactive, highlight active
+  document.querySelectorAll('.profile-btn').forEach(function(b) {
+    b.classList.remove('active');
+    b.style.background = 'transparent';
+    b.style.color = 'var(--muted2)';
+  });
   document.querySelectorAll('.dashboard').forEach(function(d) { d.classList.remove('active'); });
   btn.classList.add('active');
+  btn.style.background = 'var(--accent)';
+  btn.style.color = 'var(--bg)';
   document.getElementById('dash-' + profile).classList.add('active');
 }
 
