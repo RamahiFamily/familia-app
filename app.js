@@ -80,6 +80,7 @@ function initRealtimeSync() {
 
   // 2. Poll every 10 seconds as reliable fallback
   setInterval(async function() {
+    // Only poll list/goal/task keys — never AI cache keys
     const keys = [
       'grocery_list', 'todo_mahmoud', 'todo_haya', 'budget_items',
       'home_goals_0','home_goals_1','home_goals_2',
@@ -344,6 +345,36 @@ async function callGemini(prompt, maxTokens) {
 }
 var callAI = callGemini;
 
+// ─── AI CALL LOCK: prevents two devices calling Gemini at the same time ────────
+// If device A is loading, device B waits and then reads from cache instead
+var _aiLoadingFlags = {};
+
+async function acquireAILock(key) {
+  if (_aiLoadingFlags[key]) return false; // already loading on this device
+  _aiLoadingFlags[key] = true;
+  // Set a lock in Supabase so other devices see it
+  if (sb) {
+    var lockKey = 'ai_lock_' + key;
+    var existing = await store.get(lockKey);
+    if (existing) {
+      var lockTime = new Date(existing).getTime();
+      var now = Date.now();
+      // If lock is less than 30 seconds old, another device is loading — skip
+      if (now - lockTime < 30000) {
+        _aiLoadingFlags[key] = false;
+        return false;
+      }
+    }
+    await store.set(lockKey, new Date().toISOString());
+  }
+  return true;
+}
+
+async function releaseAILock(key) {
+  _aiLoadingFlags[key] = false;
+  if (sb) await store.set('ai_lock_' + key, null);
+}
+
 // ─── WISDOM ───────────────────────────────────────────────────────────────────
 function getWisdomCacheKey() {
   var d = new Date();
@@ -404,13 +435,14 @@ function getNewsScheduleKey() {
 
 async function loadNewsBrief() {
   var cacheKey = getNewsScheduleKey();
-  var cached = localStorage.getItem(cacheKey);
   var briefEl = document.getElementById('news-brief');
 
-  // Check Supabase cache (shared across all devices)
   var cachedObj = await store.get(cacheKey);
-  if (cachedObj) {
-    if (briefEl) briefEl.innerHTML = cachedObj;
+  if (cachedObj) { if (briefEl) briefEl.innerHTML = cachedObj; return; }
+
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    setTimeout(async function() { var c = await store.get(cacheKey); if (c && briefEl) briefEl.innerHTML = c; }, 15000);
     return;
   }
 
@@ -433,7 +465,8 @@ async function loadNewsBrief() {
         '<div style="margin-bottom:10px;"><b>⚽ Soccer:</b> ' + (d.soccer||'No data') + '</div>' +
         '<div><b>🚗 Cars:</b> ' + (d.cars||'No data') + '</div>';
 
-      await store.set(cacheKey, html); // save to Supabase so all devices share it
+      await store.set(cacheKey, html);
+      await releaseAILock(cacheKey);
       if (briefEl) briefEl.innerHTML = html;
     } catch(e) {
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red)">AI failed to format brief: ' + e.message + '</span>';
@@ -453,6 +486,12 @@ async function loadDeals() {
   var cachedDeals = await store.get(cacheKey);
   if (cachedDeals) { renderDeals(cachedDeals); return; }
 
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    setTimeout(async function() { var c = await store.get(cacheKey); if (c) renderDeals(c); }, 15000);
+    return;
+  }
+
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Fetching today\'s deals...</span>';
 
   var prompt = 'Generate 5 realistic grocery store deals for today. One deal per store for these stores: Sam\'s Club, Costco, ALDI, Price Rite, Price Chopper. Make prices realistic for 2025. Return ONLY a valid JSON array with no markdown of exactly 5 objects. Schema: [{"store":"string","item":"string","price":"string","url":"string"}]';
@@ -464,7 +503,8 @@ async function loadDeals() {
       var clean = result.text.replace(/```json|```/g,'').trim();
       deals = JSON.parse(clean);
       if (Array.isArray(deals) && deals.length >= 5) {
-        await store.set(cacheKey, deals); // save to Supabase so all devices share it
+        await store.set(cacheKey, deals);
+        await releaseAILock(cacheKey);
       }
     } catch(e) {}
   }
@@ -499,6 +539,12 @@ async function loadOutfits(refresh) {
 
   var cachedOutfits = await store.get(cacheKey);
   if (cachedOutfits) { renderOutfits(cachedOutfits); return; }
+
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    setTimeout(async function() { var c = await store.get(cacheKey); if (c) renderOutfits(c); }, 15000);
+    return;
+  }
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Generating 10 fresh looks from Zara & H&M...</span>';
 
   var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array with no markdown of exactly 10 objects. Schema: [{"title":"string", "desc":"string"}]';
@@ -510,7 +556,8 @@ async function loadOutfits(refresh) {
       var clean = result.text.replace(/```json|```/g,'').trim();
       looks = JSON.parse(clean);
       if (Array.isArray(looks) && looks.length > 0) {
-        await store.set(cacheKey, looks); // save to Supabase so all devices share it
+        await store.set(cacheKey, looks);
+        await releaseAILock(cacheKey);
       }
     } catch(e) {}
   }
@@ -564,9 +611,11 @@ async function loadRecipe() {
   if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
 
   var cachedRecipes = await store.get(cacheKey);
-  if (cachedRecipes) {
-    _hayaRecipes = cachedRecipes;
-    renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+  if (cachedRecipes) { _hayaRecipes = cachedRecipes; renderRecipe(_hayaRecipes[_hayaRecipeIdx]); return; }
+
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    setTimeout(async function() { var c = await store.get(cacheKey); if (c) { _hayaRecipes = c; renderRecipe(_hayaRecipes[_hayaRecipeIdx]); } }, 15000);
     return;
   }
 
@@ -578,7 +627,8 @@ async function loadRecipe() {
       var clean = result.text.replace(/```json|```/g,'').trim();
       _hayaRecipes = JSON.parse(clean);
       if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
-        await store.set(cacheKey, _hayaRecipes); // save to Supabase so all devices share it
+        await store.set(cacheKey, _hayaRecipes);
+        await releaseAILock(cacheKey);
       }
     } catch(e) {}
   }
