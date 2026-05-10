@@ -352,20 +352,23 @@ var _aiLoadingFlags = {};
 async function acquireAILock(key) {
   if (_aiLoadingFlags[key]) return false; // already loading on this device
   _aiLoadingFlags[key] = true;
-  // Set a lock in Supabase so other devices see it
-  if (sb) {
+  // If Supabase not ready, always allow the call (fail open)
+  if (!sb) return true;
+  try {
     var lockKey = 'ai_lock_' + key;
     var existing = await store.get(lockKey);
     if (existing) {
       var lockTime = new Date(existing).getTime();
       var now = Date.now();
-      // If lock is less than 30 seconds old, another device is loading — skip
       if (now - lockTime < 30000) {
         _aiLoadingFlags[key] = false;
         return false;
       }
     }
     await store.set(lockKey, new Date().toISOString());
+  } catch(e) {
+    // If lock check fails, allow the call anyway
+    return true;
   }
   return true;
 }
@@ -480,7 +483,6 @@ async function loadNewsBrief() {
 // ─── DEALS ────────────────────────────────────────────────────────────────────
 async function loadDeals() {
   var cacheKey = 'ai_deals_' + new Date().toDateString();
-  var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById('deals-row');
 
   var cachedDeals = await store.get(cacheKey);
@@ -608,8 +610,6 @@ var _hayaRecipeIdx = 0;
 async function loadRecipe() {
   var today = new Date().toDateString();
   var cacheKey = 'ai_recipes_array_' + today;
-  var cached = localStorage.getItem(cacheKey);
-
   var counterEl = document.getElementById('recipe-counter');
   if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
 
