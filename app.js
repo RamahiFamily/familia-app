@@ -501,12 +501,15 @@ async function loadDeals() {
   if (result && result.text) {
     try {
       var clean = result.text.replace(/```json|```/g,'').trim();
+      // Extract JSON array even if Gemini wraps it in text
+      var match = clean.match(/\[[\s\S]*\]/);
+      if (match) clean = match[0];
       deals = JSON.parse(clean);
-      if (Array.isArray(deals) && deals.length >= 5) {
+      if (Array.isArray(deals) && deals.length >= 1) {
         await store.set(cacheKey, deals);
         await releaseAILock(cacheKey);
       }
-    } catch(e) {}
+    } catch(e) { console.error('Deals parse error:', e, result.text); }
   }
 
   if (!deals || !Array.isArray(deals)) {
@@ -533,8 +536,6 @@ function renderDeals(deals) {
 // ─── OUTFITS ──────────────────────────────────────────────────────────────────
 async function loadOutfits(refresh) {
   var cacheKey = 'ai_outfits_' + new Date().toDateString();
-  if (refresh) localStorage.removeItem(cacheKey);
-  var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById('outfits-container');
 
   var cachedOutfits = await store.get(cacheKey);
@@ -554,12 +555,14 @@ async function loadOutfits(refresh) {
   if (result && result.text) {
     try {
       var clean = result.text.replace(/```json|```/g,'').trim();
+      var match = clean.match(/\[[\s\S]*\]/);
+      if (match) clean = match[0];
       looks = JSON.parse(clean);
       if (Array.isArray(looks) && looks.length > 0) {
         await store.set(cacheKey, looks);
         await releaseAILock(cacheKey);
       }
-    } catch(e) {}
+    } catch(e) { console.error('Outfits parse error:', e, result.text); }
   }
 
   if (!looks || looks.length === 0) {
@@ -625,12 +628,14 @@ async function loadRecipe() {
   if (result && result.text) {
     try {
       var clean = result.text.replace(/```json|```/g,'').trim();
+      var match = clean.match(/\[[\s\S]*\]/);
+      if (match) clean = match[0];
       _hayaRecipes = JSON.parse(clean);
       if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
         await store.set(cacheKey, _hayaRecipes);
         await releaseAILock(cacheKey);
       }
-    } catch(e) {}
+    } catch(e) { console.error('Recipes parse error:', e, result.text); }
   }
 
   if (!_hayaRecipes || _hayaRecipes.length === 0) {
