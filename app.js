@@ -1,9 +1,14 @@
 // FORCED CACHE CLEAR (Runs once upon upgrading to this new file)
-if (!localStorage.getItem('v8_cache_clear_done')) {
+if (!localStorage.getItem('v9_cache_clear_done')) {
   localStorage.removeItem('gemini_wisdom_' + new Date().toDateString());
   localStorage.removeItem('gemini_outfits_' + new Date().toDateString());
   localStorage.removeItem('gemini_recipes_array_' + new Date().toDateString());
-  localStorage.setItem('v8_cache_clear_done', '1');
+  // Clear all AI cache to force fresh data
+  const keys = Object.keys(localStorage);
+  keys.forEach(k => {
+    if (k.startsWith('f2_ai_')) localStorage.removeItem(k);
+  });
+  localStorage.setItem('v9_cache_clear_done', '1');
 }
 
 const CONFIG = {
@@ -360,7 +365,7 @@ async function acquireAILock(key) {
     if (existing) {
       var lockTime = new Date(existing).getTime();
       var now = Date.now();
-      if (now - lockTime < 60000) {  // INCREASED: 60 seconds (was 30s)
+      if (now - lockTime < 60000) {  // 60 seconds
         _aiLoadingFlags[key] = false;
         return false;
       }
@@ -378,14 +383,14 @@ async function releaseAILock(key) {
   if (sb) await store.set('ai_lock_' + key, null);
 }
 
+// ─── HELPER: Get date-based cache key (resets at midnight UTC) ───────────────
+function getCacheDateKey() {
+  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD format (UTC)
+}
+
 // ─── WISDOM (OPTIMIZED: Combined into single call) ────────────────────────────
 function getWisdomCacheKey() {
-  var d = new Date();
-  if (d.getHours() < 6) {
-    var y = new Date(d); y.setDate(y.getDate() - 1);
-    return 'ai_wisdom_shared_' + y.toDateString();
-  }
-  return 'ai_wisdom_shared_' + d.toDateString();
+  return 'ai_wisdom_shared_' + getCacheDateKey();
 }
 
 // OPTIMIZATION: Load wisdom ONCE per day, render to both elements
@@ -395,6 +400,7 @@ async function loadAllWisdom() {
   // Check cache first
   var cached = await store.get(cacheKey);
   if (cached) {
+    console.log('✓ Wisdom cached:', cacheKey);
     renderWisdom('wisdom-mahmoud', cached);
     renderWisdom('wisdom-haya', cached);
     return;
@@ -404,16 +410,19 @@ async function loadAllWisdom() {
   var locked = await acquireAILock(cacheKey);
   if (!locked) {
     // Another device is loading, wait and read cache
+    console.log('⏳ Wisdom: waiting for other device...');
     setTimeout(async function() {
       var c = await store.get(cacheKey);
       if (c) {
+        console.log('✓ Wisdom loaded from other device');
         renderWisdom('wisdom-mahmoud', c);
         renderWisdom('wisdom-haya', c);
       }
-    }, 30000);  // INCREASED: wait 30s (was 15s) to match lock duration
+    }, 30000);
     return;
   }
 
+  console.log('🔄 Generating wisdom...');
   document.getElementById('wisdom-mahmoud').innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Generating wisdom...</span>';
   document.getElementById('wisdom-haya').innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Generating wisdom...</span>';
 
@@ -426,8 +435,10 @@ async function loadAllWisdom() {
       var clean = result.text.replace(/```json|```/g, '').trim();
       wisdom = JSON.parse(clean);
       await store.set(cacheKey, wisdom);
+      console.log('✓ Wisdom saved');
       await releaseAILock(cacheKey);
     } catch(e) {
+      console.error('Wisdom parse error:', e);
       wisdom = { arabic: 'Parse Error', english: 'AI returned an invalid format. Try refreshing.', source: 'System' };
     }
   } else {
@@ -451,10 +462,8 @@ function renderWisdom(elementId, wisdom) {
 
 // ─── NEWS BRIEF ──────────────────────────────────────────────────────────────
 function getNewsScheduleKey() {
-  // One cache per day only — saves Gemini quota on free tier
-  var d = new Date();
-  if (d.getHours() < 6) { var y = new Date(d); y.setDate(y.getDate() - 1); return 'ai_news_' + y.toDateString(); }
-  return 'ai_news_' + d.toDateString();
+  // One cache per day (FIXED: now uses UTC date, not local time heuristic)
+  return 'ai_news_' + getCacheDateKey();
 }
 
 async function loadNewsBrief() {
@@ -462,15 +471,27 @@ async function loadNewsBrief() {
   var briefEl = document.getElementById('news-brief');
 
   var cachedObj = await store.get(cacheKey);
-  if (cachedObj) { if (briefEl) briefEl.innerHTML = cachedObj; return; }
-
-  var locked = await acquireAILock(cacheKey);
-  if (!locked) {
-    setTimeout(async function() { var c = await store.get(cacheKey); if (c && briefEl) briefEl.innerHTML = c; }, 30000);  // INCREASED: 30s wait
+  if (cachedObj) {
+    console.log('✓ News cached:', cacheKey);
+    if (briefEl) briefEl.innerHTML = cachedObj;
     return;
   }
 
-  if (briefEl) briefEl.innerHTML = '<span style="color:var(--muted2);font-style:italic;font-size:0.7rem;">Generating latest brief (updates 6AM, 11AM, 3PM, 6PM, 11PM)...</span>';
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    console.log('⏳ News: waiting for other device...');
+    setTimeout(async function() {
+      var c = await store.get(cacheKey);
+      if (c && briefEl) {
+        console.log('✓ News loaded from other device');
+        briefEl.innerHTML = c;
+      }
+    }, 30000);
+    return;
+  }
+
+  console.log('🔄 Generating news brief...');
+  if (briefEl) briefEl.innerHTML = '<span style="color:var(--muted2);font-style:italic;font-size:0.7rem;">Generating latest brief...</span>';
 
   var prompt = 'Write a daily briefing with exactly 4 sections. Keep each section to 1-2 short sentences only. Return ONLY a valid JSON object with no markdown: {"world":"string","economy":"string","soccer":"string","cars":"string"}';
   var result = await callAI(prompt, 600);
@@ -490,9 +511,11 @@ async function loadNewsBrief() {
         '<div><b>🚗 Cars:</b> ' + (d.cars||'No data') + '</div>';
 
       await store.set(cacheKey, html);
+      console.log('✓ News saved');
       await releaseAILock(cacheKey);
       if (briefEl) briefEl.innerHTML = html;
     } catch(e) {
+      console.error('News parse error:', e);
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red)">AI failed to format brief: ' + e.message + '</span>';
     }
   } else {
@@ -503,18 +526,30 @@ async function loadNewsBrief() {
 
 // ─── DEALS ────────────────────────────────────────────────────────────────────
 async function loadDeals() {
-  var cacheKey = 'ai_deals_' + new Date().toDateString();
+  var cacheKey = 'ai_deals_' + getCacheDateKey();
   var el = document.getElementById('deals-row');
 
   var cachedDeals = await store.get(cacheKey);
-  if (cachedDeals) { renderDeals(cachedDeals); return; }
-
-  var locked = await acquireAILock(cacheKey);
-  if (!locked) {
-    setTimeout(async function() { var c = await store.get(cacheKey); if (c) renderDeals(c); }, 30000);  // INCREASED: 30s wait
+  if (cachedDeals) {
+    console.log('✓ Deals cached:', cacheKey);
+    renderDeals(cachedDeals);
     return;
   }
 
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    console.log('⏳ Deals: waiting for other device...');
+    setTimeout(async function() {
+      var c = await store.get(cacheKey);
+      if (c) {
+        console.log('✓ Deals loaded from other device');
+        renderDeals(c);
+      }
+    }, 30000);
+    return;
+  }
+
+  console.log('🔄 Generating deals...');
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Fetching today\'s deals...</span>';
 
   var prompt = 'Generate 5 realistic grocery store deals for today. One deal per store for these stores: Sam\'s Club, Costco, ALDI, Price Rite, Price Chopper. Make prices realistic for 2025. Return ONLY a valid JSON array with no markdown: [{"store":"string","item":"string","price":"string","url":"string"}]';
@@ -530,7 +565,10 @@ async function loadDeals() {
       deals = JSON.parse(clean);
       if (Array.isArray(deals) && deals.length >= 1) {
         await store.set(cacheKey, deals);
+        console.log('✓ Deals saved');
         await releaseAILock(cacheKey);
+        renderDeals(deals);  // FIXED: now actually renders after save
+        return;
       }
     } catch(e) { console.error('Deals parse error:', e, result.text); }
   }
@@ -541,36 +579,48 @@ async function loadDeals() {
     if (el2) el2.innerHTML = '<div style="color:var(--red);font-size:0.72rem;padding:10px;">⚠️ ' + errMsg + '</div>';
     return;
   }
-  renderDeals(deals);
 }
 
 function renderDeals(deals) {
   var el = document.getElementById('deals-row');
   if (!el) return;
+  console.log('Rendering', deals.length, 'deals');
   el.innerHTML = deals.slice(0,5).map(function(d) {
-    return '<a href="' + d.url + '" target="_blank" style="flex-shrink:0;width:130px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px;cursor:pointer;text-decoration:none;display:flex;flex-direction:column;justify-content:space-between;">' +
-      '<div style="font-family:\'DM Mono\',monospace;font-size:0.56rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">' + d.store + '</div>' +
-      '<div style="font-family:\'Syne\',sans-serif;font-size:0.68rem;color:var(--text);line-height:1.3;margin-bottom:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">' + d.item + '</div>' +
-      '<div style="font-family:\'DM Mono\',monospace;font-size:0.75rem;color:var(--green);font-weight:500;">' + d.price + '</div>' +
+    return '<a href="' + (d.url || '#') + '" target="_blank" style="flex-shrink:0;width:130px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:10px;cursor:pointer;text-decoration:none;display:flex;flex-direction:column;justify-content:space-between;">' +
+      '<div style="font-family:\'DM Mono\',monospace;font-size:0.56rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">' + (d.store || 'Store') + '</div>' +
+      '<div style="font-family:\'Syne\',sans-serif;font-size:0.68rem;color:var(--text);line-height:1.3;margin-bottom:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">' + (d.item || 'Item') + '</div>' +
+      '<div style="font-family:\'DM Mono\',monospace;font-size:0.75rem;color:var(--green);font-weight:500;">' + (d.price || 'Price') + '</div>' +
       '<div style="font-family:\'DM Mono\',monospace;font-size:0.54rem;color:var(--muted2);margin-top:3px;">View Deal →</div></a>';
   }).join('');
 }
 
 // ─── OUTFITS ──────────────────────────────────────────────────────────────────
 async function loadOutfits(refresh) {
-  var cacheKey = 'ai_outfits_' + new Date().toDateString();
+  var cacheKey = 'ai_outfits_' + getCacheDateKey();
   var el = document.getElementById('outfits-container');
 
   var cachedOutfits = await store.get(cacheKey);
-  if (cachedOutfits) { renderOutfits(cachedOutfits); return; }
+  if (cachedOutfits) {
+    console.log('✓ Outfits cached:', cacheKey);
+    renderOutfits(cachedOutfits);
+    return;
+  }
 
   var locked = await acquireAILock(cacheKey);
   if (!locked) {
-    setTimeout(async function() { var c = await store.get(cacheKey); if (c) renderOutfits(c); }, 30000);  // INCREASED: 30s wait
+    console.log('⏳ Outfits: waiting for other device...');
+    setTimeout(async function() {
+      var c = await store.get(cacheKey);
+      if (c) {
+        console.log('✓ Outfits loaded from other device');
+        renderOutfits(c);
+      }
+    }, 30000);
     return;
   }
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Generating 10 fresh looks from Zara & H&M...</span>';
 
+  console.log('🔄 Generating outfits...');
   var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array with no markdown of exactly 10 objects. Schema: [{"title":"string","desc":"string (1-2 sentences)"}]';
   var result = await callAI(prompt, 1500);
   var looks = [];
@@ -583,6 +633,7 @@ async function loadOutfits(refresh) {
       looks = JSON.parse(clean);
       if (Array.isArray(looks) && looks.length > 0) {
         await store.set(cacheKey, looks);
+        console.log('✓ Outfits saved');
         await releaseAILock(cacheKey);
       }
     } catch(e) { console.error('Outfits parse error:', e, result.text); }
@@ -600,6 +651,7 @@ async function loadOutfits(refresh) {
 function renderOutfits(looks) {
   var el = document.getElementById('outfits-container');
   if (!el) return;
+  console.log('Rendering', looks.length, 'outfits');
   var images = [
     'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80',
     'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80',
@@ -629,22 +681,35 @@ var _hayaRecipes = [];
 var _hayaRecipeIdx = 0;
 
 async function loadRecipe() {
-  var today = new Date().toDateString();
-  var cacheKey = 'ai_recipes_array_' + today;
+  var cacheKey = 'ai_recipes_array_' + getCacheDateKey();
   var counterEl = document.getElementById('recipe-counter');
   if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
 
   var cachedRecipes = await store.get(cacheKey);
-  if (cachedRecipes) { _hayaRecipes = cachedRecipes; renderRecipe(_hayaRecipes[_hayaRecipeIdx]); return; }
-
-  var locked = await acquireAILock(cacheKey);
-  if (!locked) {
-    setTimeout(async function() { var c = await store.get(cacheKey); if (c) { _hayaRecipes = c; renderRecipe(_hayaRecipes[_hayaRecipeIdx]); } }, 30000);  // INCREASED: 30s wait
+  if (cachedRecipes) {
+    console.log('✓ Recipes cached:', cacheKey);
+    _hayaRecipes = cachedRecipes;
+    renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
     return;
   }
 
+  var locked = await acquireAILock(cacheKey);
+  if (!locked) {
+    console.log('⏳ Recipes: waiting for other device...');
+    setTimeout(async function() {
+      var c = await store.get(cacheKey);
+      if (c) {
+        console.log('✓ Recipes loaded from other device');
+        _hayaRecipes = c;
+        renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+      }
+    }, 30000);
+    return;
+  }
+
+  console.log('🔄 Generating recipes...');
   var prompt = 'Generate 5 different authentic Jordanian/Levantine recipes inspired by the cooking style of Ola Tashman. Return ONLY a valid JSON array with no markdown of exactly 5 objects. Schema MUST be: [{"title":"string","description":"string (2 sentences max)","time":"number (minutes)","servings":"number","ingredients":["string"],"steps":["string (brief)"],"tip":"string"}]';
-  var result = await callAI(prompt, 1200);  // REDUCED: 3000 → 1200 tokens (saves 60%)
+  var result = await callAI(prompt, 1200);
 
   if (result && result.text) {
     try {
@@ -654,6 +719,7 @@ async function loadRecipe() {
       _hayaRecipes = JSON.parse(clean);
       if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
         await store.set(cacheKey, _hayaRecipes);
+        console.log('✓ Recipes saved');
         await releaseAILock(cacheKey);
       }
     } catch(e) { console.error('Recipes parse error:', e, result.text); }
@@ -910,15 +976,16 @@ async function initApp() {
   setInterval(fetchStocks, 60000);
 
   // ═══ OPTIMIZED AI LOADER (3-4 calls/day instead of 6-8) ═══
+  // Fixed: All cache keys now use getCacheDateKey() for proper daily reset
   // Wisdom: Combined into single call, rendered to both elements (SAVES 50%)
   // Recipes: Token limit reduced 3000→1200 (SAVES 60%)
-  // Timings: Increased lock timeout 30s→60s + wait 15s→30s (better multi-device)
+  // All AI cache keys now sync properly across devices
+  console.log('🚀 Loading Familia...');
   setTimeout(function() { loadAllWisdom(); }, 0);        // 1 call (was 2)
   setTimeout(function() { loadNewsBrief();   }, 3000);   // 1 call
   setTimeout(function() { loadDeals();       }, 6000);   // 1 call
   setTimeout(function() { loadOutfits(false);}, 9000);   // 1 call
   setTimeout(function() { loadRecipe();      }, 12000);  // 1 call (cheaper: 1200 tokens)
-  // NO hourly refresh — cache lasts all day, Gemini only called once per feature per day
 
   renderList('grocery_list', 'groc-list');
   renderGoalPanel('hgoals-0', 'home_goals_0');
