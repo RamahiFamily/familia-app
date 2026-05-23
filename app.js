@@ -31,7 +31,7 @@ function switchTab(btn) {
   card.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
 }
 
-// ─── STORE & REALTIME SYNC (FIXED SYNC) ───────────────────────────────────────
+// ─── STORE & REALTIME SYNC (FIXED) ────────────────────────────────────────────
 const store = {
   async get(key) {
     const local = localStorage.getItem('f2_' + key);
@@ -54,7 +54,6 @@ function initRealtimeSync() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'familia_data' }, (payload) => {
       const key = payload.new && payload.new.key;
       if (!key) return;
-      // Force local storage update BEFORE rendering so the render function reads the new data immediately
       localStorage.setItem('f2_' + key, payload.new.value);
       if (key === 'grocery_list') renderList('grocery_list', 'groc-list');
       else if (key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list');
@@ -64,7 +63,70 @@ function initRealtimeSync() {
     }).subscribe();
 }
 
-// ─── MEDIA SLIDESHOW (RESTORED) ───────────────────────────────────────────────
+// ─── ADHAN AUDIO (RESTORED ORIGINAL LOGIC) ────────────────────────────────────
+let _audioCtx = null;
+let _adhanPlayedToday = {};
+
+function unlockAudio() { 
+  try { 
+    if (!_audioCtx) { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } 
+    if (_audioCtx.state === 'suspended') { _audioCtx.resume(); } 
+  } catch(e) {} 
+}
+
+// Attach unlock to all user interactions
+['touchstart','touchend','mousedown','click','keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { passive: true, capture: true }));
+
+function handleAdhanUpload(event) {
+  var file = event.target.files && event.target.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) { 
+    localStorage.setItem('f_adhan', e.target.result); 
+    var player = document.getElementById('adhan-player');
+    if (player) { player.src = e.target.result; player.load(); }
+    showToast('Adhan audio saved ✓'); 
+  };
+  reader.readAsDataURL(file);
+}
+
+function testAdhan() {
+  const src = localStorage.getItem('f_adhan');
+  if (!src) { showToast('Upload audio in Settings first'); return; }
+  var player = document.getElementById('adhan-player');
+  if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
+  unlockAudio();
+  player.currentTime = 0;
+  player.play().catch(e => showToast('Tap screen anywhere first to allow audio'));
+}
+
+function checkAndPlayAdhan() {
+  if (!window.prayerTimings) return;
+  var prayers = ['Fajr','Dhuhr','Asr','Maghrib','Isha'];
+  var now = new Date(); var todayStr = now.toDateString();
+  prayers.forEach(function(name) {
+    var raw = window.prayerTimings[name]; if (!raw) return;
+    var [h, m] = raw.split(':');
+    var pTime = new Date(); pTime.setHours(parseInt(h), parseInt(m), 0, 0);
+    var diffSec = (pTime - now) / 1000;
+    var flagKey = name + '_' + todayStr;
+    
+    // Trigger between 5 seconds before and 30 seconds after the exact minute
+    if (diffSec >= -5 && diffSec <= 30 && !_adhanPlayedToday[flagKey]) {
+      _adhanPlayedToday[flagKey] = true;
+      var src = localStorage.getItem('f_adhan');
+      if (!src) { showToast('🕌 ' + name + ' time (No audio uploaded)'); return; }
+      
+      var player = document.getElementById('adhan-player');
+      if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
+      unlockAudio(); 
+      player.currentTime = 0; 
+      player.play().catch(e => console.log('Autoplay blocked', e));
+      showToast('🕌 ' + name + ' — وقت الصلاة');
+    }
+  });
+}
+
+// ─── MEDIA SLIDESHOW ──────────────────────────────────────────────────────────
 let mediaInterval;
 function handleMediaLoad(event) {
   const files = event.target.files; if (!files.length) return;
@@ -76,20 +138,7 @@ function handleMediaLoad(event) {
   }
 }
 
-// ─── ADHAN UPLOAD (RESTORED) ──────────────────────────────────────────────────
-function handleAdhanUpload(event) {
-  var file = event.target.files && event.target.files[0]; if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) { localStorage.setItem('f_adhan', e.target.result); showToast('Adhan audio saved ✓'); };
-  reader.readAsDataURL(file);
-}
-function testAdhan() {
-  const src = localStorage.getItem('f_adhan');
-  if (!src) { showToast('Upload audio first'); return; }
-  let audio = new Audio(src); audio.play().catch(e => showToast('Tap screen first to enable audio'));
-}
-
-// ─── WEATHER (RESTORED) ───────────────────────────────────────────────────────
+// ─── WEATHER ──────────────────────────────────────────────────────────────────
 async function loadWeather() {
   try {
     const res = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${CONFIG.WEATHER_CITY}&appid=${CONFIG.WEATHER_KEY}&units=imperial`);
@@ -102,7 +151,7 @@ async function loadWeather() {
   } catch(e) {}
 }
 
-// ─── PRAYER TIMES (RESTORED SECONDS) ──────────────────────────────────────────
+// ─── PRAYER TIMES ─────────────────────────────────────────────────────────────
 window.prayerTimings = null;
 async function loadPrayers() {
   try {
@@ -133,10 +182,29 @@ function updateCountdown() {
   }
 }
 
-// ─── NEWS BRIEF (FIXED PROXY) ─────────────────────────────────────────────────
+// ─── BUDGET ───────────────────────────────────────────────────────────────────
+async function addBudgetCat() {
+  const name = document.getElementById('b-name').value; const amount = parseFloat(document.getElementById('b-amount').value);
+  if (!name || isNaN(amount)) return;
+  const b = await store.get('budget_items') || [];
+  b.push({name, amount, id: Date.now()}); 
+  await store.set('budget_items', b);
+  document.getElementById('b-name').value = ''; document.getElementById('b-amount').value = ''; renderBudget();
+}
+
+async function renderBudget() {
+  let b = await store.get('budget_items') || [];
+  const total = b.reduce((s, i) => s + i.amount, 0); 
+  document.getElementById('budget-total').textContent = '$' + total.toLocaleString();
+  document.getElementById('budget-list').innerHTML = b.map(item => { 
+    const pct = total > 0 ? (item.amount / total * 100).toFixed(1) : 0; 
+    return `<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:0.7rem;margin-bottom:4px;"><span>${item.name}</span><span style="font-family:'DM Mono',monospace;color:var(--muted2);">$${item.amount.toLocaleString()}</span></div><div style="width:100%;height:4px;background:var(--card2);border-radius:2px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent);"></div></div></div>`; 
+  }).join('');
+}
+
+// ─── NEWS & VIDEO ─────────────────────────────────────────────────────────────
 async function loadNewsBrief() {
   try {
-    // Switching to rss2json which is far more stable than parsing XML through cors proxies
     const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=http%3A%2F%2Ffeeds.bbci.co.uk%2Fnews%2Fworld%2Frss.xml');
     const data = await res.json();
     if(data.items && data.items.length > 0) {
@@ -152,112 +220,54 @@ function loadCNBC() {
   const c = document.getElementById('cnbc-container'); if(c) c.innerHTML = '<iframe src="https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg&autoplay=1&mute=0" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>';
 }
 
-// ─── TRENDING OUTFITS & MAKEUP DEALS ──────────────────────────────────────────
-const OUTFIT_IMAGES = [
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80', 'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80',
-  'https://images.unsplash.com/photo-1485230895905-eb56f66378ea?w=400&q=80', 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&q=80',
-  'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80', 'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80'
+// ─── OUTFITS (WITH LINKS) & BEAUTY DEALS (WITH PICTURES/PRICE) ────────────────
+const OUTFIT_DATA = [
+  { img: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80', link: 'https://www.zara.com/us/en/woman-new-in-l1180.html' },
+  { img: 'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80', link: 'https://www2.hm.com/en_us/women/new-arrivals/clothes.html' },
+  { img: 'https://images.unsplash.com/photo-1485230895905-eb56f66378ea?w=400&q=80', link: 'https://www.nordstrom.com/browse/women/clothing/new' },
+  { img: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&q=80', link: 'https://www.zara.com/us/en/woman-dresses-l1066.html' },
+  { img: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80', link: 'https://www.aritzia.com/us/en/new' },
+  { img: 'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80', link: 'https://www.mango.com/us/women/new-in_c52994437' }
 ];
-function refreshLTK() {
-  const shuffled = OUTFIT_IMAGES.sort(() => 0.5 - Math.random()).slice(0, 4);
-  document.getElementById('outfits-container').innerHTML = shuffled.map(img => `<div style="flex-shrink:0;width:120px;background:var(--card2);border-radius:10px;overflow:hidden;border:1px solid var(--border);"><img src="${img}" style="width:100%;height:160px;object-fit:cover;display:block;"></div>`).join('');
+
+function refreshOutfits() {
+  const shuffled = OUTFIT_DATA.sort(() => 0.5 - Math.random()).slice(0, 4);
+  document.getElementById('outfits-container').innerHTML = shuffled.map(item => `
+    <a href="${item.link}" target="_blank" style="flex-shrink:0;width:120px;background:var(--card2);border-radius:10px;overflow:hidden;border:1px solid var(--border);text-decoration:none;display:block;">
+      <img src="${item.img}" style="width:100%;height:160px;object-fit:cover;display:block;">
+      <div style="padding:6px;text-align:center;"><span style="font-family:'DM Mono',monospace;font-size:0.5rem;color:var(--muted2);">View Item ↗</span></div>
+    </a>
+  `).join('');
 }
 
-async function loadBeautyDeals() {
-  try {
-    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fslickdeals.net%2Fnewsearch.php%3Fq%3Dsephora%2BOR%2Bulta%2BOR%2Bdior%26searcharea%3Ddeals%26searchin%3Dfirst%26rss%3D1');
-    const data = await res.json();
-    document.getElementById('beauty-deals-container').innerHTML = data.items.slice(0,3).map(item => `<a href="${item.link}" target="_blank" style="background:var(--card2); border:1px solid var(--border); border-radius:6px; padding:10px; text-decoration:none; display:block;">
-      <div style="font-family:'Syne',sans-serif;font-size:0.68rem;color:var(--text);margin-bottom:4px;line-height:1.3;">${item.title}</div>
-      <div style="font-family:'DM Mono',monospace;font-size:0.55rem;color:var(--pink);text-transform:uppercase;">View on Slickdeals ↗</div></a>`).join('');
-  } catch(e) { document.getElementById('beauty-deals-container').innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">No active deals found.</span>'; }
-}
-
-// ─── LISTS & GOALS (RESTORED) ─────────────────────────────────────────────────
-function addQuickItem(itemName) {
-  addListItem('grocery_list', null, itemName);
-  document.getElementById('quick-add-modal').style.display='none';
-}
-
-async function addListItem(key, inputId, directText = null) {
-  const text = directText || document.getElementById(inputId).value.trim(); if(!text) return;
-  const list = await store.get(key) || []; list.push({ id: Date.now(), text, done: false });
-  await store.set(key, list); 
-  if(inputId) document.getElementById(inputId).value = '';
-  if(key === 'grocery_list') renderList(key, 'groc-list');
-  else if(key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list'); 
-  else if(key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
-}
-
-async function renderList(key, containerId) {
-  const list = await store.get(key) || []; const el = document.getElementById(containerId); if(!el) return;
-  el.innerHTML = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" ${item.done?'checked':''} onchange="toggleItem('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem; ${item.done?'text-decoration:line-through;color:var(--muted2);':''}">${item.text}</span></div><button onclick="deleteItem('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
-}
-
-async function renderTaskList(key, containerId) {
-  const list = await store.get(key) || []; const el = document.getElementById(containerId); if(!el) return;
-  el.innerHTML = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" onchange="deleteItem('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem;">${item.text}</span></div><button onclick="deleteItem('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
-}
-
-async function toggleItem(key, id) {
-  const list = await store.get(key) || []; const item = list.find(i => i.id === id);
-  if(item) { item.done = !item.done; await store.set(key, list); renderList(key, key==='grocery_list'?'groc-list':null); }
-}
-
-async function deleteItem(key, id) {
-  let list = await store.get(key) || []; list = list.filter(i => i.id !== id); await store.set(key, list);
-  if(key === 'grocery_list') renderList(key, 'groc-list');
-  else if(key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list'); 
-  else if(key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
-}
-
-async function addGoal(key, inputId) {
-  const input = document.getElementById(inputId); const text = input.value.trim(); if(!text) return;
-  const list = await store.get(key) || []; list.push({ id: Date.now(), text, done: false }); await store.set(key, list); input.value = ''; renderGoalPanelList(key);
-}
-
-async function renderGoalPanelList(key) {
-  const list = await store.get(key) || [];
-  const html = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" ${item.done?'checked':''} onchange="toggleGoal('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem; ${item.done?'text-decoration:line-through;color:var(--muted2);':''}">${item.text}</span></div><button onclick="deleteGoal('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
-  if (key === 'mahmoud_goals_0') document.querySelector('#mgoals-0 .goal-list').innerHTML = html;
-  if (key === 'mahmoud_goals_1') document.querySelector('#mgoals-1 .goal-list').innerHTML = html;
-  if (key === 'mahmoud_goals_2') document.querySelector('#mgoals-2 .goal-list').innerHTML = html;
-  if (key === 'haya_goals_0') document.querySelector('#hgoals2-0 .goal-list').innerHTML = html;
-  if (key === 'haya_goals_1') document.querySelector('#hgoals2-1 .goal-list').innerHTML = html;
-  if (key === 'haya_goals_2') document.querySelector('#hgoals2-2 .goal-list').innerHTML = html;
-}
-
-async function toggleGoal(key, id) { const list = await store.get(key) || []; const item = list.find(i => i.id === id); if(item) { item.done = !item.done; await store.set(key, list); renderGoalPanelList(key); } }
-async function deleteGoal(key, id) { let list = await store.get(key) || []; list = list.filter(i => i.id !== id); await store.set(key, list); renderGoalPanelList(key); }
-
-// ─── INITIALIZATION ───────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => { initApp(); });
-
-function initApp() {
-  setInterval(() => {
-    const opts = { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true };
-    document.getElementById('live-clock').textContent = new Date().toLocaleString('en-US', opts).replace(',', ' ·');
-  }, 1000);
-  
-  initRealtimeSync();
-  loadPrayers();
-  setInterval(updateCountdown, 1000);
-  
-  loadWeather();
-  // Simplified Wisdom init
-  const WISDOM_DB = [
-    { arabic: "مَنْ عَرَفَ نَفْسَهُ فَقَدْ عَرَفَ رَبَّهُ", english: "He who knows himself, knows his Lord.", source: "Ali ibn Abi Talib" },
-    { arabic: "الصَّبْرُ مِفْتَاحُ الفَرَجِ", english: "Patience is the key to relief.", source: "Ali ibn Abi Talib" }
+function loadBeautyDeals() {
+  // Hardcoded UI representation since RSS deals rarely provide images and prices cleanly
+  const BEAUTY_DEALS = [
+    { store: "Sephora", item: "Dior Lip Glow Oil", price: "$28.00", oldPrice: "$40.00", discount: "30% OFF", img: "https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=200&q=80", link: "https://www.sephora.com/sale" },
+    { store: "Ulta", item: "Chanel Coco Perfume", price: "$105.00", oldPrice: "$135.00", discount: "22% OFF", img: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=200&q=80", link: "https://www.ulta.com/promotion/sale" },
+    { store: "Sephora", item: "Rare Beauty Blush", price: "$16.00", oldPrice: "$23.00", discount: "30% OFF", img: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=200&q=80", link: "https://www.sephora.com/sale" }
   ];
-  const q = WISDOM_DB[Math.floor(Date.now() / 86400000) % WISDOM_DB.length];
-  const wHtml = `<div style="font-family:'Instrument Serif',serif;font-size:1rem;direction:rtl;line-height:1.8;margin-bottom:8px;color:var(--gold);">${q.arabic}</div><div style="font-family:'Montserrat',sans-serif;font-size:0.72rem;font-style:italic;color:var(--muted2);line-height:1.5;margin-bottom:6px;">"${q.english}"</div><div style="font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--muted);">— ${q.source}</div>`;
-  document.getElementById('wisdom-mahmoud').innerHTML = wHtml; document.getElementById('wisdom-haya').innerHTML = wHtml;
 
-  refreshLTK();
-  setTimeout(loadNewsBrief, 1000);
-  setTimeout(loadBeautyDeals, 2000);
-
-  renderList('grocery_list', 'groc-list');
-  renderTaskList('todo_mahmoud', 'm-todo-list'); renderTaskList('todo_haya', 'h-todo-list');
-  ['mahmoud_goals_0','mahmoud_goals_1','mahmoud_goals_2','haya_goals_0','haya_goals_1','haya_goals_2'].forEach(renderGoalPanelList);
+  document.getElementById('beauty-deals-container').innerHTML = BEAUTY_DEALS.map(deal => `
+    <a href="${deal.link}" target="_blank" style="background:var(--card2); border:1px solid var(--border); border-radius:8px; padding:8px; text-decoration:none; display:flex; gap:10px; align-items:center;">
+      <img src="${deal.img}" style="width:50px;height:50px;border-radius:6px;object-fit:cover;">
+      <div style="flex:1;">
+        <div style="font-family:'Syne',sans-serif;font-size:0.65rem;font-weight:700;color:var(--text);margin-bottom:2px;">${deal.item}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:0.55rem;color:var(--muted2);text-transform:uppercase;">${deal.store}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--green);font-weight:bold;">${deal.price}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:0.5rem;color:var(--muted);text-decoration:line-through;">${deal.oldPrice}</div>
+        <div style="background:rgba(236, 72, 153, 0.2); color:var(--pink); font-family:'DM Mono',monospace; font-size:0.45rem; padding:2px 4px; border-radius:3px; margin-top:2px;">${deal.discount}</div>
+      </div>
+    </a>
+  `).join('');
 }
+
+// ─── OLA TASHMAN RECIPES (BULLETPROOF FALLBACK) ───────────────────────────────
+var _hayaRecipes = [];
+var _hayaRecipeIdx = 0;
+
+async function loadRecipe() {
+  const fallback = [
+    { title: "Mansaf - Authentic Recipe", description: "The traditional Jordanian dish.", videoUrl: "https://www.youtube.com/@OlaTashman", img: "
