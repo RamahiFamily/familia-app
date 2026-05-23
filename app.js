@@ -18,7 +18,7 @@ const CONFIG = {
   WEATHER_CITY:      'Newington,CT,US',
   PHONE:             '1860798577',
   SLIDESHOW_SPEED:   5000,
-  GEMINI_KEY:        'AIzaSyA-in8IX5_bDHg312hzp32vSAWWLDa87oI'
+  GEMINI_KEY:        'AIzaSyCrHL7ArEX76vBOFjdVzWywWlLRzLKkVX4'
 };
 
 // ─── SUPABASE INIT ────────────────────────────────────────────────────────────
