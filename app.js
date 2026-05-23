@@ -6,7 +6,32 @@ const CONFIG = {
   SLIDESHOW_SPEED:   5000
 };
 
-const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+// Safe Supabase Initialization
+const _sbReady = CONFIG.SUPABASE_URL && CONFIG.SUPABASE_URL !== 'YOUR_SUPABASE_URL';
+const sb = _sbReady ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+
+// ─── LOGIN FLOW ───────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (sessionStorage.getItem('f_auth') === '1') {
+    document.getElementById('login-screen').style.display = 'none';
+    initAppSafe();
+  }
+});
+
+function checkLogin() {
+  if (document.getElementById('login-pwd').value === 'familia2024') {
+    sessionStorage.setItem('f_auth', '1');
+    document.getElementById('login-screen').style.display = 'none';
+    initAppSafe();
+  } else {
+    document.getElementById('login-err').textContent = 'Incorrect password.';
+  }
+}
+
+function initAppSafe() {
+  try { initApp(); } 
+  catch(e) { console.error("Initialization error:", e); showToast("App error, check connection"); }
+}
 
 // ─── UTILS & UI CONTROLS ──────────────────────────────────────────────────────
 function showToast(msg) {
@@ -36,20 +61,25 @@ const store = {
   async get(key) {
     const local = localStorage.getItem('f2_' + key);
     if (local) return JSON.parse(local);
-    try {
-      const { data } = await sb.from('familia_data').select('value').eq('key', key).maybeSingle();
-      if (data) { localStorage.setItem('f2_' + key, data.value); return JSON.parse(data.value); }
-    } catch(e) {}
+    if (sb) {
+      try {
+        const { data } = await sb.from('familia_data').select('value').eq('key', key).maybeSingle();
+        if (data) { localStorage.setItem('f2_' + key, data.value); return JSON.parse(data.value); }
+      } catch(e) {}
+    }
     return null;
   },
   async set(key, value) {
     const serialized = JSON.stringify(value);
     localStorage.setItem('f2_' + key, serialized);
-    try { await sb.from('familia_data').upsert({ key: key, value: serialized, updated_at: new Date().toISOString() }, { onConflict: 'key' }); } catch(e) {}
+    if (sb) {
+      try { await sb.from('familia_data').upsert({ key: key, value: serialized, updated_at: new Date().toISOString() }, { onConflict: 'key' }); } catch(e) {}
+    }
   }
 };
 
 function initRealtimeSync() {
+  if (!sb) return;
   sb.channel('familia_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'familia_data' }, (payload) => {
       const key = payload.new && payload.new.key;
@@ -73,8 +103,6 @@ function unlockAudio() {
     if (_audioCtx.state === 'suspended') { _audioCtx.resume(); } 
   } catch(e) {} 
 }
-
-// Attach unlock to all user interactions
 ['touchstart','touchend','mousedown','click','keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { passive: true, capture: true }));
 
 function handleAdhanUpload(event) {
@@ -105,22 +133,20 @@ function checkAndPlayAdhan() {
   var now = new Date(); var todayStr = now.toDateString();
   prayers.forEach(function(name) {
     var raw = window.prayerTimings[name]; if (!raw) return;
-    var [h, m] = raw.split(':');
-    var pTime = new Date(); pTime.setHours(parseInt(h), parseInt(m), 0, 0);
+    var parts = raw.split(':');
+    var pTime = new Date(); pTime.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
     var diffSec = (pTime - now) / 1000;
     var flagKey = name + '_' + todayStr;
     
-    // Trigger between 5 seconds before and 30 seconds after the exact minute
     if (diffSec >= -5 && diffSec <= 30 && !_adhanPlayedToday[flagKey]) {
       _adhanPlayedToday[flagKey] = true;
       var src = localStorage.getItem('f_adhan');
-      if (!src) { showToast('🕌 ' + name + ' time (No audio uploaded)'); return; }
+      if (!src) { showToast('🕌 ' + name + ' time'); return; }
       
       var player = document.getElementById('adhan-player');
       if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
-      unlockAudio(); 
-      player.currentTime = 0; 
-      player.play().catch(e => console.log('Autoplay blocked', e));
+      unlockAudio(); player.currentTime = 0; 
+      player.play().catch(e => console.log('Autoplay blocked'));
       showToast('🕌 ' + name + ' — وقت الصلاة');
     }
   });
@@ -183,20 +209,13 @@ function updateCountdown() {
 }
 
 // ─── BUDGET ───────────────────────────────────────────────────────────────────
-async function addBudgetCat() {
-  const name = document.getElementById('b-name').value; const amount = parseFloat(document.getElementById('b-amount').value);
-  if (!name || isNaN(amount)) return;
-  const b = await store.get('budget_items') || [];
-  b.push({name, amount, id: Date.now()}); 
-  await store.set('budget_items', b);
-  document.getElementById('b-name').value = ''; document.getElementById('b-amount').value = ''; renderBudget();
-}
-
 async function renderBudget() {
   let b = await store.get('budget_items') || [];
   const total = b.reduce((s, i) => s + i.amount, 0); 
-  document.getElementById('budget-total').textContent = '$' + total.toLocaleString();
-  document.getElementById('budget-list').innerHTML = b.map(item => { 
+  const elTotal = document.getElementById('budget-total');
+  const elList = document.getElementById('budget-list');
+  if(elTotal) elTotal.textContent = '$' + total.toLocaleString();
+  if(elList) elList.innerHTML = b.map(item => { 
     const pct = total > 0 ? (item.amount / total * 100).toFixed(1) : 0; 
     return `<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:0.7rem;margin-bottom:4px;"><span>${item.name}</span><span style="font-family:'DM Mono',monospace;color:var(--muted2);">$${item.amount.toLocaleString()}</span></div><div style="width:100%;height:4px;background:var(--card2);border-radius:2px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent);"></div></div></div>`; 
   }).join('');
@@ -241,7 +260,6 @@ function refreshOutfits() {
 }
 
 function loadBeautyDeals() {
-  // Hardcoded UI representation since RSS deals rarely provide images and prices cleanly
   const BEAUTY_DEALS = [
     { store: "Sephora", item: "Dior Lip Glow Oil", price: "$28.00", oldPrice: "$40.00", discount: "30% OFF", img: "https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=200&q=80", link: "https://www.sephora.com/sale" },
     { store: "Ulta", item: "Chanel Coco Perfume", price: "$105.00", oldPrice: "$135.00", discount: "22% OFF", img: "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=200&q=80", link: "https://www.ulta.com/promotion/sale" },
@@ -270,4 +288,122 @@ var _hayaRecipeIdx = 0;
 
 async function loadRecipe() {
   const fallback = [
-    { title: "Mansaf - Authentic Recipe", description: "The traditional Jordanian dish.", videoUrl: "https://www.youtube.com/@OlaTashman", img: "
+    { title: "Mansaf - Authentic Recipe", description: "The traditional Jordanian dish.", videoUrl: "https://www.youtube.com/@OlaTashman", img: "https://images.unsplash.com/photo-1565557612199-5264b321a5b6?w=600&q=80", ingredients: ["1 kg Lamb", "Jameed", "Rice", "Almonds", "Ghee"], tip: "Watch video for full steps" },
+    { title: "Chicken Maqluba", description: "Flipped upside down chicken and rice.", videoUrl: "https://www.youtube.com/@OlaTashman", img: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=600&q=80", ingredients: ["1 Whole Chicken", "Eggplant", "Cauliflower", "Rice", "Spices"], tip: "Watch video for full steps" },
+    { title: "Musakhan Rolls", description: "Chicken, onions, sumac wrapped in bread.", videoUrl: "https://www.youtube.com/@OlaTashman", img: "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=600&q=80", ingredients: ["Shredded Chicken", "Sumac", "Onions", "Olive Oil", "Shrak Bread"], tip: "Watch video for full steps" }
+  ];
+
+  try {
+    const channelId = 'UChnE0G0QoWn-z1X1T3A97-g'; 
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=' + channelId)}`);
+    const data = await res.json();
+    if (data && data.items && data.items.length > 0) {
+      _hayaRecipes = data.items.slice(0, 5).map(item => ({
+        title: item.title, description: "Latest from Ola Tashman", videoUrl: item.link, img: item.thumbnail, 
+        ingredients: ["Tap the link below to watch the video for exact ingredients."], tip: "Watch Full Recipe Video"
+      }));
+    } else { _hayaRecipes = fallback; }
+  } catch(e) { _hayaRecipes = fallback; } 
+
+  if (_hayaRecipes.length > 0) renderRecipe(_hayaRecipes[0]);
+}
+
+function changeRecipe(dir) {
+  if (!_hayaRecipes.length) return;
+  _hayaRecipeIdx = (_hayaRecipeIdx + dir + _hayaRecipes.length) % _hayaRecipes.length;
+  renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+}
+
+function renderRecipe(recipe) {
+  document.getElementById('recipe-img').src = recipe.img;
+  document.getElementById('recipe-title').textContent = recipe.title;
+  document.getElementById('recipe-counter').textContent = `Recipe ${_hayaRecipeIdx + 1} of ${_hayaRecipes.length}`;
+  document.getElementById('recipe-ingredients').innerHTML = recipe.ingredients.map(i => `<div style="font-size:0.7rem; color:var(--muted2); padding:2px 0;">• ${i}</div>`).join('');
+  const tipEl = document.getElementById('recipe-tip');
+  tipEl.innerHTML = `<a href="${recipe.videoUrl}" target="_blank" style="color:var(--purple); text-decoration:none; font-weight:bold;">▶ ${recipe.tip}</a>`;
+  tipEl.style.display = 'block';
+}
+
+// ─── LISTS & GOALS ────────────────────────────────────────────────────────────
+function addQuickItem(itemName) {
+  addListItem('grocery_list', null, itemName);
+  document.getElementById('quick-add-modal').style.display='none';
+}
+
+async function addListItem(key, inputId, directText = null) {
+  const text = directText || document.getElementById(inputId).value.trim(); if(!text) return;
+  const list = await store.get(key) || []; list.push({ id: Date.now(), text, done: false });
+  await store.set(key, list); 
+  if(inputId) document.getElementById(inputId).value = '';
+  if(key === 'grocery_list') renderList(key, 'groc-list');
+  else if(key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list'); 
+  else if(key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
+}
+
+async function renderList(key, containerId) {
+  const list = await store.get(key) || []; const el = document.getElementById(containerId); if(!el) return;
+  el.innerHTML = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" ${item.done?'checked':''} onchange="toggleItem('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem; ${item.done?'text-decoration:line-through;color:var(--muted2);':''}">${item.text}</span></div><button onclick="deleteItem('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
+}
+
+async function renderTaskList(key, containerId) {
+  const list = await store.get(key) || []; const el = document.getElementById(containerId); if(!el) return;
+  el.innerHTML = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" onchange="deleteItem('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem;">${item.text}</span></div><button onclick="deleteItem('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
+}
+
+async function toggleItem(key, id) {
+  const list = await store.get(key) || []; const item = list.find(i => i.id === id);
+  if(item) { item.done = !item.done; await store.set(key, list); renderList(key, key==='grocery_list'?'groc-list':null); }
+}
+
+async function deleteItem(key, id) {
+  let list = await store.get(key) || []; list = list.filter(i => i.id !== id); await store.set(key, list);
+  if(key === 'grocery_list') renderList(key, 'groc-list');
+  else if(key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list'); 
+  else if(key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
+}
+
+async function addGoal(key, inputId) {
+  const input = document.getElementById(inputId); const text = input.value.trim(); if(!text) return;
+  const list = await store.get(key) || []; list.push({ id: Date.now(), text, done: false }); await store.set(key, list); input.value = ''; renderGoalPanelList(key);
+}
+
+async function renderGoalPanelList(key) {
+  const list = await store.get(key) || [];
+  const html = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" ${item.done?'checked':''} onchange="toggleGoal('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem; ${item.done?'text-decoration:line-through;color:var(--muted2);':''}">${item.text}</span></div><button onclick="deleteGoal('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
+  const map = { 'mahmoud_goals_0':'#mgoals-0', 'mahmoud_goals_1':'#mgoals-1', 'mahmoud_goals_2':'#mgoals-2', 'haya_goals_0':'#hgoals2-0', 'haya_goals_1':'#hgoals2-1', 'haya_goals_2':'#hgoals2-2' };
+  const target = document.querySelector(`${map[key]} .goal-list`);
+  if (target) target.innerHTML = html;
+}
+
+async function toggleGoal(key, id) { const list = await store.get(key) || []; const item = list.find(i => i.id === id); if(item) { item.done = !item.done; await store.set(key, list); renderGoalPanelList(key); } }
+async function deleteGoal(key, id) { let list = await store.get(key) || []; list = list.filter(i => i.id !== id); await store.set(key, list); renderGoalPanelList(key); }
+
+// ─── APP INITIALIZATION ───────────────────────────────────────────────────────
+function initApp() {
+  setInterval(() => {
+    const opts = { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true };
+    const clk = document.getElementById('live-clock'); if (clk) clk.textContent = new Date().toLocaleString('en-US', opts).replace(',', ' ·');
+  }, 1000);
+  
+  initRealtimeSync();
+  loadPrayers();
+  setInterval(() => { updateCountdown(); checkAndPlayAdhan(); }, 1000);
+  
+  loadWeather();
+  const WISDOM_DB = [
+    { arabic: "مَنْ عَرَفَ نَفْسَهُ فَقَدْ عَرَفَ رَبَّهُ", english: "He who knows himself, knows his Lord.", source: "Ali ibn Abi Talib" },
+    { arabic: "الصَّبْرُ مِفْتَاحُ الفَرَجِ", english: "Patience is the key to relief.", source: "Ali ibn Abi Talib" }
+  ];
+  const q = WISDOM_DB[Math.floor(Date.now() / 86400000) % WISDOM_DB.length];
+  const wHtml = `<div style="font-family:'Instrument Serif',serif;font-size:1rem;direction:rtl;line-height:1.8;margin-bottom:8px;color:var(--gold);">${q.arabic}</div><div style="font-family:'Montserrat',sans-serif;font-size:0.72rem;font-style:italic;color:var(--muted2);line-height:1.5;margin-bottom:6px;">"${q.english}"</div><div style="font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--muted);">— ${q.source}</div>`;
+  const wm = document.getElementById('wisdom-mahmoud'); if(wm) wm.innerHTML = wHtml; 
+  const wh = document.getElementById('wisdom-haya'); if(wh) wh.innerHTML = wHtml;
+
+  refreshOutfits(); loadBeautyDeals();
+  setTimeout(loadNewsBrief, 1000); setTimeout(loadRecipe, 2000);
+
+  renderList('grocery_list', 'groc-list');
+  renderTaskList('todo_mahmoud', 'm-todo-list'); renderTaskList('todo_haya', 'h-todo-list');
+  ['mahmoud_goals_0','mahmoud_goals_1','mahmoud_goals_2','haya_goals_0','haya_goals_1','haya_goals_2'].forEach(renderGoalPanelList);
+  renderBudget();
+}
