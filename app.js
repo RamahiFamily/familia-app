@@ -2,73 +2,107 @@ const CONFIG = {
   SUPABASE_URL:      'https://kyhbexbfmbtuhiddtvdb.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5aGJleGJmbWJ0dWhpZGR0dmRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjY0OTgsImV4cCI6MjA5MzY0MjQ5OH0.Rv2FtqZWGtHzHieCS0SmQjnGTEdSXsqrYTYfJrwddMQ',
   WEATHER_KEY:       '7a6a9fd1087d7335ccb8d3312177225c',
-  WEATHER_CITY:      'Newington,CT,US'
+  WEATHER_CITY:      'Newington,CT,US',
+  SLIDESHOW_SPEED:   5000
 };
 
 const sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
 
-// ─── TAB SWITCHING FIX ────────────────────────────────────────────────────────
+// ─── UTILS & UI CONTROLS ──────────────────────────────────────────────────────
+function showToast(msg) {
+  var t = document.getElementById('toast'); if (!t) return;
+  t.textContent = msg; t.style.transform = 'translateX(-50%) translateY(0)';
+  setTimeout(() => t.style.transform = 'translateX(-50%) translateY(80px)', 2400);
+}
+function openSettings() { document.getElementById('settings-panel').style.right = '0'; document.getElementById('settings-overlay').style.display = 'block'; }
+function closeSettings() { document.getElementById('settings-panel').style.right = '-380px'; document.getElementById('settings-overlay').style.display = 'none'; }
+
 function switchProfile(profile, btn) {
-  // Reset all buttons
-  document.querySelectorAll('.profile-btn').forEach(b => {
-    b.style.background = 'transparent';
-    b.style.color = 'var(--muted2)';
-  });
-  // Highlight clicked button
-  btn.style.background = 'var(--accent)';
-  btn.style.color = 'var(--bg)';
-  
-  // Switch Dashboard view
+  document.querySelectorAll('.profile-btn').forEach(b => { b.style.background = 'transparent'; b.style.color = 'var(--muted2)'; });
+  btn.style.background = 'var(--accent)'; btn.style.color = 'var(--bg)';
   document.querySelectorAll('.dashboard').forEach(d => d.classList.remove('active'));
   document.getElementById('dash-' + profile).classList.add('active');
 }
 
-// ─── STORE & REALTIME SYNC (FIXED) ────────────────────────────────────────────
+function switchTab(btn) {
+  var tabRow = btn.closest('.tabs'); var card = btn.closest('.card');
+  var tabs = tabRow.querySelectorAll('.tab'); var idx = Array.from(tabs).indexOf(btn);
+  tabs.forEach(t => t.classList.remove('active')); btn.classList.add('active');
+  card.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+}
+
+// ─── STORE & REALTIME SYNC (FIXED SYNC) ───────────────────────────────────────
 const store = {
   async get(key) {
+    const local = localStorage.getItem('f2_' + key);
+    if (local) return JSON.parse(local);
     try {
       const { data } = await sb.from('familia_data').select('value').eq('key', key).maybeSingle();
-      if (data) return JSON.parse(data.value);
+      if (data) { localStorage.setItem('f2_' + key, data.value); return JSON.parse(data.value); }
     } catch(e) {}
-    return JSON.parse(localStorage.getItem('f2_' + key));
+    return null;
   },
   async set(key, value) {
     const serialized = JSON.stringify(value);
     localStorage.setItem('f2_' + key, serialized);
-    try {
-      await sb.from('familia_data').upsert({ key: key, value: serialized, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    } catch(e) {}
+    try { await sb.from('familia_data').upsert({ key: key, value: serialized, updated_at: new Date().toISOString() }, { onConflict: 'key' }); } catch(e) {}
   }
 };
 
 function initRealtimeSync() {
   sb.channel('familia_changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'familia_data' }, (payload) => {
-      const key = (payload.new && payload.new.key);
+      const key = payload.new && payload.new.key;
       if (!key) return;
+      // Force local storage update BEFORE rendering so the render function reads the new data immediately
+      localStorage.setItem('f2_' + key, payload.new.value);
       if (key === 'grocery_list') renderList('grocery_list', 'groc-list');
       else if (key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list');
       else if (key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
       else if (key === 'budget_items') renderBudget();
+      else if (key.includes('goals')) renderGoalPanelList(key);
     }).subscribe();
 }
 
-// ─── UTILS ────────────────────────────────────────────────────────────────────
-function showToast(msg) {
-  var t = document.getElementById('toast'); if (!t) return;
-  t.textContent = msg; t.style.transform = 'translateX(-50%) translateY(0)';
-  setTimeout(() => t.style.transform = 'translateX(-50%) translateY(80px)', 2400);
+// ─── MEDIA SLIDESHOW (RESTORED) ───────────────────────────────────────────────
+let mediaInterval;
+function handleMediaLoad(event) {
+  const files = event.target.files; if (!files.length) return;
+  const urls = Array.from(files).map(f => URL.createObjectURL(f));
+  const container = document.getElementById('media-container');
+  if (urls.length > 0) {
+    let idx = 0; container.innerHTML = `<img src="${urls[idx]}" style="width:100%;height:100%;object-fit:cover;display:block;">`;
+    if (urls.length > 1) { clearInterval(mediaInterval); mediaInterval = setInterval(() => { idx = (idx + 1) % urls.length; container.innerHTML = `<img src="${urls[idx]}" style="width:100%;height:100%;object-fit:cover;display:block;">`; }, CONFIG.SLIDESHOW_SPEED); }
+  }
 }
 
-// ─── MEDIA / VIDEO FIX ────────────────────────────────────────────────────────
-function loadCNBC() {
-  const container = document.getElementById('cnbc-container');
-  if (!container) return;
-  // Fixed Al Jazeera English Live Embed
-  container.innerHTML = '<iframe src="https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg&autoplay=1&mute=0" style="width:100%;height:100%;border:none;" allow="autoplay; encrypted-media" allowfullscreen></iframe>';
+// ─── ADHAN UPLOAD (RESTORED) ──────────────────────────────────────────────────
+function handleAdhanUpload(event) {
+  var file = event.target.files && event.target.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) { localStorage.setItem('f_adhan', e.target.result); showToast('Adhan audio saved ✓'); };
+  reader.readAsDataURL(file);
+}
+function testAdhan() {
+  const src = localStorage.getItem('f_adhan');
+  if (!src) { showToast('Upload audio first'); return; }
+  let audio = new Audio(src); audio.play().catch(e => showToast('Tap screen first to enable audio'));
 }
 
-// ─── PRAYER TIMES (RESTORED) ──────────────────────────────────────────────────
+// ─── WEATHER (RESTORED) ───────────────────────────────────────────────────────
+async function loadWeather() {
+  try {
+    const res = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${CONFIG.WEATHER_CITY}&appid=${CONFIG.WEATHER_KEY}&units=imperial`);
+    const data = await res.json();
+    if(data.list) {
+      const current = data.list[0];
+      const html = `<div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-family:'Instrument Serif',serif; font-size:2.8rem; line-height:1;">${Math.round(current.main.temp)}°</div><img src="https://openweathermap.org/img/wn/${current.weather[0].icon}@2x.png" style="width:50px;"></div><div style="font-family:'Montserrat',sans-serif; font-size:0.8rem; margin-bottom:12px;">${current.weather[0].description} | H:${Math.round(current.main.temp_max)}° L:${Math.round(current.main.temp_min)}°</div>`;
+      document.querySelectorAll('.weather-basic').forEach(el => el.innerHTML = html);
+    }
+  } catch(e) {}
+}
+
+// ─── PRAYER TIMES (RESTORED SECONDS) ──────────────────────────────────────────
 window.prayerTimings = null;
 async function loadPrayers() {
   try {
@@ -76,9 +110,8 @@ async function loadPrayers() {
     const data = await res.json();
     if(data.data && data.data.timings) {
       window.prayerTimings = data.data.timings;
-      const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
       const grid = document.getElementById('prayer-grid');
-      grid.innerHTML = prayers.map(name => {
+      grid.innerHTML = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(name => {
         let [h,m] = data.data.timings[name].split(':'); let hh = parseInt(h); const ampm = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12 || 12;
         return `<div class="prayer-item" data-name="${name}" style="display:flex; justify-content:space-between; font-family:'DM Mono',monospace; font-size:0.75rem; padding:6px; background:var(--card2); border-radius:6px;"><span style="color:var(--muted2);">${name}</span><span>${hh}:${m} ${ampm}</span></div>`;
       }).join('');
@@ -88,171 +121,72 @@ async function loadPrayers() {
 
 function updateCountdown() {
   if(!window.prayerTimings) return;
-  const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   const now = new Date(); let next = null; let minDiff = Infinity;
-  prayers.forEach(name => {
+  ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].forEach(name => {
     const [h,m] = window.prayerTimings[name].split(':'); let pTime = new Date(); pTime.setHours(h, m, 0, 0);
     if(pTime < now) pTime.setDate(pTime.getDate()+1); const diff = pTime - now;
     if(diff < minDiff) { minDiff = diff; next = name; }
   });
   if(next) {
-    const hrs = Math.floor(minDiff/3600000); const mins = Math.floor((minDiff%3600000)/60000);
-    document.getElementById('prayer-countdown').innerHTML = `<div style="font-family:'Syne',sans-serif; font-size:0.7rem; text-transform:uppercase; color:var(--text); margin-bottom:4px;">Next: <span style="color:var(--gold);">${next}</span></div><div style="font-family:'DM Mono',monospace; font-size:1.1rem; color:var(--text);">${hrs}h ${mins}m</div>`;
-    document.querySelectorAll('.prayer-item').forEach(el => {
-      el.style.borderLeft = el.dataset.name === next ? '2px solid var(--gold)' : 'none';
-    });
+    const hrs = Math.floor(minDiff/3600000); const mins = Math.floor((minDiff%3600000)/60000); const secs = Math.floor((minDiff%60000)/1000);
+    document.getElementById('prayer-countdown').innerHTML = `<div style="font-family:'Syne',sans-serif; font-size:0.7rem; text-transform:uppercase; color:var(--text); margin-bottom:4px;">Next: <span style="color:var(--gold);">${next}</span></div><div style="font-family:'DM Mono',monospace; font-size:1.1rem; color:var(--text);">${hrs}h ${mins}m ${secs}s</div>`;
   }
 }
 
-// ─── BUDGET (RESTORED) ────────────────────────────────────────────────────────
-async function addBudgetCat() {
-  const name = document.getElementById('b-name').value; const amount = parseFloat(document.getElementById('b-amount').value);
-  if (!name || isNaN(amount)) return;
-  const b = await store.get('budget_items') || [];
-  b.push({name, amount, id: Date.now()}); 
-  await store.set('budget_items', b);
-  document.getElementById('b-name').value = ''; document.getElementById('b-amount').value = ''; renderBudget();
-}
-
-async function renderBudget() {
-  let b = await store.get('budget_items') || [];
-  const total = b.reduce((s, i) => s + i.amount, 0); 
-  document.getElementById('budget-total').textContent = '$' + total.toLocaleString();
-  document.getElementById('budget-list').innerHTML = b.map(item => { 
-    const pct = total > 0 ? (item.amount / total * 100).toFixed(1) : 0; 
-    return `<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:0.7rem;margin-bottom:4px;"><span>${item.name}</span><span style="font-family:'DM Mono',monospace;color:var(--muted2);">$${item.amount.toLocaleString()}</span></div><div style="width:100%;height:4px;background:var(--card2);border-radius:2px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent);"></div></div></div>`; 
-  }).join('');
-}
-
-// ─── WISDOM ───────────────────────────────────────────────────────────────────
-const WISDOM_DB = [
-  { arabic: "مَنْ عَرَفَ نَفْسَهُ فَقَدْ عَرَفَ رَبَّهُ", english: "He who knows himself, knows his Lord.", source: "Ali ibn Abi Talib" },
-  { arabic: "دَعِ الأَيَّامَ تَفْعَلُ مَا تَشَاءُ", english: "Let days go forth and do as they please, and remain firm when settling a decree.", source: "Imam Al-Shafi'i" },
-  { arabic: "الصَّبْرُ مِفْتَاحُ الفَرَجِ", english: "Patience is the key to relief.", source: "Ali ibn Abi Talib" },
-  { arabic: "مَا حَكَّ جِلْدَكَ مِثْلُ ظُفْرِكَ", english: "Nothing scratches your skin better than your own nail.", source: "Imam Al-Shafi'i" }
-];
-function loadWisdom() {
-  const quote = WISDOM_DB[Math.floor(Date.now() / 86400000) % WISDOM_DB.length];
-  const html = `<div style="font-family:'Instrument Serif',serif;font-size:1rem;direction:rtl;line-height:1.8;margin-bottom:8px;color:var(--gold);">${quote.arabic}</div><div style="font-family:'Montserrat',sans-serif;font-size:0.72rem;font-style:italic;color:var(--muted2);line-height:1.5;margin-bottom:6px;">"${quote.english}"</div><div style="font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--muted);">— ${quote.source}</div>`;
-  document.getElementById('wisdom-mahmoud').innerHTML = html; document.getElementById('wisdom-haya').innerHTML = html;
-}
-
-// ─── NEWS BRIEF ───────────────────────────────────────────────────────────────
+// ─── NEWS BRIEF (FIXED PROXY) ─────────────────────────────────────────────────
 async function loadNewsBrief() {
   try {
-    // Using a more reliable proxy for XML parsing
-    const proxy = 'https://api.allorigins.win/get?url=';
-    const resWorld = await fetch(proxy + encodeURIComponent('http://feeds.bbci.co.uk/news/world/rss.xml'));
-    const dataWorld = await resWorld.json();
-    const xmlWorld = new DOMParser().parseFromString(dataWorld.contents, "text/xml");
-    const worldTitle = xmlWorld.querySelector('item title').textContent;
-
-    document.getElementById('news-brief').innerHTML = `
-      <div><b>🌍 World:</b> <span style="color:var(--muted2);">${worldTitle}</span></div>
-      <div style="font-size:0.6rem; color:var(--muted); margin-top:5px; text-align:right;">Live BBC Feed</div>
-    `;
-  } catch(e) {
-    document.getElementById('news-brief').innerHTML = '<span style="color:var(--red)">Feed unavailable.</span>';
-  }
-}
-
-// ─── LTK OUTFITS (REFRESHABLE) ────────────────────────────────────────────────
-const LTK_IMAGES = [
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80',
-  'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80',
-  'https://images.unsplash.com/photo-1485230895905-eb56f66378ea?w=400&q=80',
-  'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&q=80',
-  'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80',
-  'https://images.unsplash.com/photo-1495385794356-15371f348c31?w=400&q=80',
-  'https://images.unsplash.com/photo-1532453288672-3a27e9be9efd?w=400&q=80',
-  'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80'
-];
-
-function refreshLTK() {
-  const el = document.getElementById('outfits-container');
-  // Shuffle array to get 4 random looks
-  const shuffled = LTK_IMAGES.sort(() => 0.5 - Math.random()).slice(0, 4);
-  
-  el.innerHTML = shuffled.map(img => `
-    <div style="flex-shrink:0;width:120px;background:var(--card2);border-radius:10px;overflow:hidden;border:1px solid var(--border);">
-      <img src="${img}" style="width:100%;height:160px;object-fit:cover;display:block;">
-      <div style="padding:8px; text-align:center;">
-        <div style="font-family:'Syne',sans-serif;font-size:0.6rem;font-weight:700;color:var(--text);">Zara / H&M Style</div>
-      </div>
-    </div>
-  `).join('');
-}
-
-// ─── OLA TASHMAN RECIPES (FIXED) ──────────────────────────────────────────────
-var _hayaRecipes = [];
-var _hayaRecipeIdx = 0;
-
-async function loadRecipe() {
-  try {
-    // YouTube blocks direct fetch, using allorigins proxy wrapper
-    const channelId = 'UChnE0G0QoWn-z1X1T3A97-g'; 
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=' + channelId)}`);
+    // Switching to rss2json which is far more stable than parsing XML through cors proxies
+    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=http%3A%2F%2Ffeeds.bbci.co.uk%2Fnews%2Fworld%2Frss.xml');
     const data = await res.json();
-    const xml = new DOMParser().parseFromString(data.contents, "text/xml");
-    const entries = Array.from(xml.querySelectorAll("entry"));
-
-    _hayaRecipes = entries.slice(0, 5).map(entry => {
-      const title = entry.querySelector("title").textContent;
-      const link = entry.querySelector("link").getAttribute("href");
-      const mediaGroup = entry.getElementsByTagNameNS("*", "group")[0];
-      const thumb = mediaGroup ? mediaGroup.getElementsByTagNameNS("*", "thumbnail")[0].getAttribute("url") : "";
-      
-      return {
-        title: title, description: "Latest from Ola Tashman",
-        videoUrl: link, img: thumb,
-        ingredients: ["Tap the link below to watch the video for exact measurements."],
-        tip: "Watch Full Recipe Video"
-      };
-    });
-
-    if (_hayaRecipes.length > 0) renderRecipe(_hayaRecipes[0]);
-  } catch(e) {
-    document.getElementById('recipe-title').textContent = "Failed to load channel data.";
-  }
+    if(data.items && data.items.length > 0) {
+      document.getElementById('news-brief').innerHTML = `
+        <div><b>🌍 World:</b> <span style="color:var(--muted2);">${data.items[0].title}</span></div>
+        <div style="font-size:0.6rem; color:var(--muted); margin-top:5px; text-align:right;">BBC News RSS</div>
+      `;
+    }
+  } catch(e) { document.getElementById('news-brief').innerHTML = '<span style="color:var(--red)">Feed unavailable.</span>'; }
 }
 
-function changeRecipe(dir) {
-  if (!_hayaRecipes.length) return;
-  _hayaRecipeIdx = (_hayaRecipeIdx + dir + _hayaRecipes.length) % _hayaRecipes.length;
-  renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+function loadCNBC() {
+  const c = document.getElementById('cnbc-container'); if(c) c.innerHTML = '<iframe src="https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg&autoplay=1&mute=0" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>';
 }
 
-function renderRecipe(recipe) {
-  document.getElementById('recipe-img').src = recipe.img;
-  document.getElementById('recipe-title').textContent = recipe.title;
-  document.getElementById('recipe-counter').textContent = `Recipe ${_hayaRecipeIdx + 1} of ${_hayaRecipes.length}`;
-  document.getElementById('recipe-ingredients').innerHTML = recipe.ingredients.map(i => `<div style="font-size:0.7rem; color:var(--muted2);">${i}</div>`).join('');
-  
-  const tipEl = document.getElementById('recipe-tip');
-  tipEl.innerHTML = `<a href="${recipe.videoUrl}" target="_blank" style="color:var(--purple); text-decoration:none; font-weight:bold;">▶ ${recipe.tip}</a>`;
-  tipEl.style.display = 'block';
+// ─── TRENDING OUTFITS & MAKEUP DEALS ──────────────────────────────────────────
+const OUTFIT_IMAGES = [
+  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80', 'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80',
+  'https://images.unsplash.com/photo-1485230895905-eb56f66378ea?w=400&q=80', 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&q=80',
+  'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80', 'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80'
+];
+function refreshLTK() {
+  const shuffled = OUTFIT_IMAGES.sort(() => 0.5 - Math.random()).slice(0, 4);
+  document.getElementById('outfits-container').innerHTML = shuffled.map(img => `<div style="flex-shrink:0;width:120px;background:var(--card2);border-radius:10px;overflow:hidden;border:1px solid var(--border);"><img src="${img}" style="width:100%;height:160px;object-fit:cover;display:block;"></div>`).join('');
 }
 
-// ─── LISTS & TODOS (WITH QUICK ADD) ───────────────────────────────────────────
+async function loadBeautyDeals() {
+  try {
+    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fslickdeals.net%2Fnewsearch.php%3Fq%3Dsephora%2BOR%2Bulta%2BOR%2Bdior%26searcharea%3Ddeals%26searchin%3Dfirst%26rss%3D1');
+    const data = await res.json();
+    document.getElementById('beauty-deals-container').innerHTML = data.items.slice(0,3).map(item => `<a href="${item.link}" target="_blank" style="background:var(--card2); border:1px solid var(--border); border-radius:6px; padding:10px; text-decoration:none; display:block;">
+      <div style="font-family:'Syne',sans-serif;font-size:0.68rem;color:var(--text);margin-bottom:4px;line-height:1.3;">${item.title}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.55rem;color:var(--pink);text-transform:uppercase;">View on Slickdeals ↗</div></a>`).join('');
+  } catch(e) { document.getElementById('beauty-deals-container').innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">No active deals found.</span>'; }
+}
+
+// ─── LISTS & GOALS (RESTORED) ─────────────────────────────────────────────────
+function addQuickItem(itemName) {
+  addListItem('grocery_list', null, itemName);
+  document.getElementById('quick-add-modal').style.display='none';
+}
+
 async function addListItem(key, inputId, directText = null) {
-  const text = directText || document.getElementById(inputId).value.trim(); 
-  if(!text) return;
-  
-  const list = await store.get(key) || []; 
-  list.push({ id: Date.now(), text, done: false });
+  const text = directText || document.getElementById(inputId).value.trim(); if(!text) return;
+  const list = await store.get(key) || []; list.push({ id: Date.now(), text, done: false });
   await store.set(key, list); 
-  
   if(inputId) document.getElementById(inputId).value = '';
-  
   if(key === 'grocery_list') renderList(key, 'groc-list');
   else if(key === 'todo_mahmoud') renderTaskList('todo_mahmoud', 'm-todo-list'); 
   else if(key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
-}
-
-// Helper for the new Popup buttons
-function addQuickItem(itemName) {
-  addListItem('grocery_list', null, itemName);
-  showToast(itemName + " added ✓");
 }
 
 async function renderList(key, containerId) {
@@ -277,6 +211,25 @@ async function deleteItem(key, id) {
   else if(key === 'todo_haya') renderTaskList('todo_haya', 'h-todo-list');
 }
 
+async function addGoal(key, inputId) {
+  const input = document.getElementById(inputId); const text = input.value.trim(); if(!text) return;
+  const list = await store.get(key) || []; list.push({ id: Date.now(), text, done: false }); await store.set(key, list); input.value = ''; renderGoalPanelList(key);
+}
+
+async function renderGoalPanelList(key) {
+  const list = await store.get(key) || [];
+  const html = list.map(item => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" ${item.done?'checked':''} onchange="toggleGoal('${key}', ${item.id})" style="accent-color:var(--accent);"><span style="font-size:0.75rem; ${item.done?'text-decoration:line-through;color:var(--muted2);':''}">${item.text}</span></div><button onclick="deleteGoal('${key}', ${item.id})" style="background:transparent; border:none; cursor:pointer; color:var(--red); padding:0; font-size:0.8rem;">×</button></div>`).join('');
+  if (key === 'mahmoud_goals_0') document.querySelector('#mgoals-0 .goal-list').innerHTML = html;
+  if (key === 'mahmoud_goals_1') document.querySelector('#mgoals-1 .goal-list').innerHTML = html;
+  if (key === 'mahmoud_goals_2') document.querySelector('#mgoals-2 .goal-list').innerHTML = html;
+  if (key === 'haya_goals_0') document.querySelector('#hgoals2-0 .goal-list').innerHTML = html;
+  if (key === 'haya_goals_1') document.querySelector('#hgoals2-1 .goal-list').innerHTML = html;
+  if (key === 'haya_goals_2') document.querySelector('#hgoals2-2 .goal-list').innerHTML = html;
+}
+
+async function toggleGoal(key, id) { const list = await store.get(key) || []; const item = list.find(i => i.id === id); if(item) { item.done = !item.done; await store.set(key, list); renderGoalPanelList(key); } }
+async function deleteGoal(key, id) { let list = await store.get(key) || []; list = list.filter(i => i.id !== id); await store.set(key, list); renderGoalPanelList(key); }
+
 // ─── INITIALIZATION ───────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => { initApp(); });
 
@@ -290,13 +243,21 @@ function initApp() {
   loadPrayers();
   setInterval(updateCountdown, 1000);
   
-  loadWisdom();
-  renderBudget();
+  loadWeather();
+  // Simplified Wisdom init
+  const WISDOM_DB = [
+    { arabic: "مَنْ عَرَفَ نَفْسَهُ فَقَدْ عَرَفَ رَبَّهُ", english: "He who knows himself, knows his Lord.", source: "Ali ibn Abi Talib" },
+    { arabic: "الصَّبْرُ مِفْتَاحُ الفَرَجِ", english: "Patience is the key to relief.", source: "Ali ibn Abi Talib" }
+  ];
+  const q = WISDOM_DB[Math.floor(Date.now() / 86400000) % WISDOM_DB.length];
+  const wHtml = `<div style="font-family:'Instrument Serif',serif;font-size:1rem;direction:rtl;line-height:1.8;margin-bottom:8px;color:var(--gold);">${q.arabic}</div><div style="font-family:'Montserrat',sans-serif;font-size:0.72rem;font-style:italic;color:var(--muted2);line-height:1.5;margin-bottom:6px;">"${q.english}"</div><div style="font-family:'DM Mono',monospace;font-size:0.6rem;color:var(--muted);">— ${q.source}</div>`;
+  document.getElementById('wisdom-mahmoud').innerHTML = wHtml; document.getElementById('wisdom-haya').innerHTML = wHtml;
+
   refreshLTK();
   setTimeout(loadNewsBrief, 1000);
-  setTimeout(loadRecipe, 2000);
+  setTimeout(loadBeautyDeals, 2000);
 
   renderList('grocery_list', 'groc-list');
-  renderTaskList('todo_mahmoud', 'm-todo-list');
-  renderTaskList('todo_haya', 'h-todo-list');
+  renderTaskList('todo_mahmoud', 'm-todo-list'); renderTaskList('todo_haya', 'h-todo-list');
+  ['mahmoud_goals_0','mahmoud_goals_1','mahmoud_goals_2','haya_goals_0','haya_goals_1','haya_goals_2'].forEach(renderGoalPanelList);
 }
