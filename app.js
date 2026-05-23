@@ -329,24 +329,71 @@ async function callGemini(prompt, maxTokens) {
 }
 var callAI = callGemini;
 
-// ─── WISDOM ───────────────────────────────────────────────────────────────────
-function getWisdomCacheKey() {
+// ─── AI SHARED CACHE (Supabase-first, localStorage fallback) ─────────────────
+// All AI results are stored in Supabase so every device shares them.
+// localStorage is used only as an instant-render cache for the current session.
+// Gemini is only called if Supabase has no result for today's slot.
+
+function aiDayKey() {
+  // Day resets at 6am so overnight users stay on "yesterday's" content
   var d = new Date();
-  if (d.getHours() < 6) {
-    var y = new Date(d); y.setDate(y.getDate() - 1);
-    return 'ai_wisdom_' + y.toDateString();
-  }
-  return 'ai_wisdom_' + d.toDateString();
+  if (d.getHours() < 6) { var y = new Date(d); y.setDate(y.getDate()-1); return y.toDateString(); }
+  return d.toDateString();
 }
 
+// Slot = one of 6 windows per day: 0=6am,1=9am,2=12pm,3=3pm,4=6pm,5=9pm
+// Wisdom uses slot 0 only (once per day). News/deals/outfits/recipes each get slot 0.
+// This means Gemini is called at most once per feature per day = 5 calls/day max.
+function aiSlotKey(feature) {
+  return 'ai_' + feature + '_' + aiDayKey();
+}
+
+async function aiCacheGet(feature) {
+  var lsKey = 'f2_' + aiSlotKey(feature);
+  // 1. Check localStorage first (instant, no network)
+  var local = localStorage.getItem(lsKey);
+  if (local) { try { return JSON.parse(local); } catch(e) {} }
+  // 2. Check Supabase (shared across all devices)
+  if (sb) {
+    try {
+      var sbKey = aiSlotKey(feature);
+      var { data, error } = await sb.from('familia_data').select('value').eq('key', sbKey).maybeSingle();
+      if (!error && data && data.value) {
+        var parsed = JSON.parse(data.value);
+        // Save to localStorage so next render is instant
+        localStorage.setItem(lsKey, data.value);
+        return parsed;
+      }
+    } catch(e) { console.warn('aiCacheGet Supabase error:', e.message); }
+  }
+  return null;
+}
+
+async function aiCacheSet(feature, value) {
+  var sbKey = aiSlotKey(feature);
+  var lsKey = 'f2_' + sbKey;
+  var serialized = JSON.stringify(value);
+  // Save locally immediately
+  localStorage.setItem(lsKey, serialized);
+  // Save to Supabase so all other devices get it
+  if (sb) {
+    try {
+      var now = new Date().toISOString();
+      await sb.from('familia_data').upsert(
+        { key: sbKey, value: serialized, updated_at: now },
+        { onConflict: 'key' }
+      );
+    } catch(e) { console.warn('aiCacheSet Supabase error:', e.message); }
+  }
+}
+
+// ─── WISDOM ───────────────────────────────────────────────────────────────────
 async function loadIslamicWisdom(elementId) {
-  var cacheKey = getWisdomCacheKey();
-  var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById(elementId);
 
-  if (cached) {
-    try { renderWisdom(elementId, JSON.parse(cached)); return; } catch(e) {}
-  }
+  // Both panels share the same wisdom for the day (1 Gemini call total)
+  var cached = await aiCacheGet('wisdom');
+  if (cached) { renderWisdom(elementId, cached); return; }
 
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Generating new wisdom...</span>';
 
@@ -358,25 +405,30 @@ async function loadIslamicWisdom(elementId) {
     try {
       var clean = result.text.replace(/```json|```/g, '').trim();
       wisdom = JSON.parse(clean);
-      localStorage.setItem(cacheKey, JSON.stringify(wisdom));
+      await aiCacheSet('wisdom', wisdom);  // stored in Supabase — all devices share it
     } catch(e) {
       wisdom = { arabic: 'Parse Error', english: 'AI returned an invalid format. Try refreshing.', source: 'System' };
     }
   } else {
-    wisdom = {
-      arabic: 'API Not Connected',
-      english: 'Error: ' + (result ? result.error : 'Unknown'),
-      source: 'System'
-    };
+    wisdom = { arabic: 'API Not Connected', english: 'Error: ' + (result ? result.error : 'Unknown'), source: 'System' };
   }
 
   renderWisdom(elementId, wisdom);
 }
 
-// Keep loadAllWisdom as an alias so both old and new initApp calls work
+// Both Mahmoud and Haya panels share the same wisdom — only 1 Gemini call
 async function loadAllWisdom() {
+  var cached = await aiCacheGet('wisdom');
+  if (cached) {
+    renderWisdom('wisdom-mahmoud', cached);
+    renderWisdom('wisdom-haya', cached);
+    return;
+  }
+  // First panel fetches and saves; second panel reuses
   await loadIslamicWisdom('wisdom-mahmoud');
-  await loadIslamicWisdom('wisdom-haya');
+  var fetched = await aiCacheGet('wisdom');
+  if (fetched) renderWisdom('wisdom-haya', fetched);
+  else await loadIslamicWisdom('wisdom-haya');
 }
 
 function renderWisdom(elementId, wisdom) {
@@ -390,19 +442,12 @@ function renderWisdom(elementId, wisdom) {
 }
 
 // ─── NEWS BRIEF ───────────────────────────────────────────────────────────────
-function getNewsScheduleKey() {
-  var d = new Date();
-  if (d.getHours() < 6) { var y = new Date(d); y.setDate(y.getDate() - 1); return 'ai_news_' + y.toDateString(); }
-  return 'ai_news_' + d.toDateString();
-}
-
 async function loadNewsBrief() {
-  var cacheKey = getNewsScheduleKey();
-  var cached = localStorage.getItem(cacheKey);
   var briefEl = document.getElementById('news-brief');
 
+  var cached = await aiCacheGet('news');
   if (cached) {
-    if (briefEl) briefEl.innerHTML = cached;
+    if (briefEl) briefEl.innerHTML = cached;  // already stored as HTML string
     return;
   }
 
@@ -420,7 +465,7 @@ async function loadNewsBrief() {
         '<div style="margin-bottom:10px;"><b>📈 Economy:</b> ' + (d.economy||'No data') + '</div>' +
         '<div style="margin-bottom:10px;"><b>⚽ Soccer:</b> ' + (d.soccer||'No data') + '</div>' +
         '<div><b>🚗 Cars:</b> ' + (d.cars||'No data') + '</div>';
-      localStorage.setItem(cacheKey, html);
+      await aiCacheSet('news', html);  // store HTML string — shared across all devices
       if (briefEl) briefEl.innerHTML = html;
     } catch(e) {
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red)">AI failed to format brief: ' + e.message + '</span>';
@@ -433,13 +478,10 @@ async function loadNewsBrief() {
 
 // ─── DEALS ────────────────────────────────────────────────────────────────────
 async function loadDeals() {
-  var cacheKey = 'ai_deals_' + new Date().toDateString();
-  var cached = localStorage.getItem(cacheKey);
   var el = document.getElementById('deals-row');
 
-  if (cached) {
-    try { renderDeals(JSON.parse(cached)); return; } catch(e) {}
-  }
+  var cached = await aiCacheGet('deals');
+  if (cached) { renderDeals(cached); return; }
 
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Fetching today\'s deals...</span>';
 
@@ -452,7 +494,7 @@ async function loadDeals() {
       var clean = result.text.replace(/```json|```/g,'').trim();
       deals = JSON.parse(clean);
       if (Array.isArray(deals) && deals.length >= 5) {
-        localStorage.setItem(cacheKey, JSON.stringify(deals));
+        await aiCacheSet('deals', deals);  // shared across all devices
       }
     } catch(e) {}
   }
@@ -483,14 +525,18 @@ function renderDeals(deals) {
 
 // ─── OUTFITS ──────────────────────────────────────────────────────────────────
 async function loadOutfits(refresh) {
-  var cacheKey = 'ai_outfits_' + new Date().toDateString();
-  if (refresh) localStorage.removeItem(cacheKey);
-  var cached = localStorage.getItem(cacheKey);
-  var el = document.getElementById('outfits-container');
-
-  if (cached) {
-    try { renderOutfits(JSON.parse(cached)); return; } catch(e) {}
+  if (refresh) {
+    // Force-clear both Supabase and localStorage so a fresh call is made
+    if (sb) {
+      try { await sb.from('familia_data').delete().eq('key', aiSlotKey('outfits')); } catch(e) {}
+    }
+    localStorage.removeItem('f2_' + aiSlotKey('outfits'));
   }
+
+  var el = document.getElementById('outfits-container');
+  var cached = await aiCacheGet('outfits');
+  if (cached) { renderOutfits(cached); return; }
+
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Generating 10 fresh looks from Zara & H&M...</span>';
 
   var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array with no markdown of exactly 10 objects. Schema: [{"title":"string", "desc":"string"}]';
@@ -502,16 +548,13 @@ async function loadOutfits(refresh) {
       var clean = result.text.replace(/```json|```/g,'').trim();
       looks = JSON.parse(clean);
       if (Array.isArray(looks) && looks.length > 0) {
-        localStorage.setItem(cacheKey, JSON.stringify(looks));
+        await aiCacheSet('outfits', looks);  // shared across all devices
       }
     } catch(e) {}
   }
 
   if (!looks || looks.length === 0) {
-    looks = [{
-      title: 'API Not Connected',
-      desc: 'Error: ' + (result ? result.error : 'Unknown. Check your Gemini API key')
-    }];
+    looks = [{ title: 'API Not Connected', desc: 'Error: ' + (result ? result.error : 'Unknown. Check your Gemini API key') }];
   }
   renderOutfits(looks);
 }
@@ -547,20 +590,17 @@ var _hayaRecipes = [];
 var _hayaRecipeIdx = 0;
 
 async function loadRecipe() {
-  var today = new Date().toDateString();
-  var cacheKey = 'ai_recipes_array_' + today;
-  var cached = localStorage.getItem(cacheKey);
-
   var counterEl = document.getElementById('recipe-counter');
-  if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
+  if (counterEl) counterEl.textContent = 'Loading recipes...';
 
+  var cached = await aiCacheGet('recipes');
   if (cached) {
-    try {
-      _hayaRecipes = JSON.parse(cached);
-      renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
-      return;
-    } catch(e) {}
+    _hayaRecipes = cached;
+    renderRecipe(_hayaRecipes[_hayaRecipeIdx]);
+    return;
   }
+
+  if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
 
   var prompt = 'Generate 5 different authentic Jordanian/Levantine recipes inspired by the cooking style of Ola Tashman. Return ONLY a valid JSON array with no markdown of exactly 5 objects. Schema MUST be exactly this: [{"title":"string","description":"string","time":45,"servings":4,"ingredients":["string"],"steps":["string"],"tip":"string"}]';
   var result = await callAI(prompt, 3000);
@@ -570,7 +610,7 @@ async function loadRecipe() {
       var clean = result.text.replace(/```json|```/g,'').trim();
       _hayaRecipes = JSON.parse(clean);
       if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
-        localStorage.setItem(cacheKey, JSON.stringify(_hayaRecipes));
+        await aiCacheSet('recipes', _hayaRecipes);  // shared across all devices
       }
     } catch(e) {}
   }
