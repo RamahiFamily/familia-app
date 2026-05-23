@@ -107,6 +107,14 @@
         <div class="card-title"><span class="dot"></span>Family Budget</div>
         <div id="budget-total" style="font-family:'DM Mono',monospace; font-size:1.8rem; color:var(--text); margin-bottom:12px;">$0</div>
         <div id="budget-list" style="margin-bottom:12px;"></div>
+        <details style="font-size:0.7rem; color:var(--muted2);">
+          <summary style="cursor:pointer; margin-bottom:8px;">+ Add Category</summary>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <input id="b-name" type="text" placeholder="Name" style="flex:1; padding:6px; font-size:0.7rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;">
+            <input id="b-amount" type="number" placeholder="Amount" style="width:80px; padding:6px; font-size:0.7rem; background:var(--card2); border:1px solid var(--border2); color:var(--text); border-radius:5px;">
+            <button onclick="addBudgetCat()" style="padding:6px 10px; background:var(--accent); color:var(--bg); border:none; border-radius:5px; cursor:pointer;">Add</button>
+          </div>
+        </details>
       </div>
     </div>
     <div>
@@ -302,6 +310,6 @@
 <audio id="adhan-player" preload="auto" style="display:none;"></audio>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=deterministic_v5"></script>
+<script src="app.js"></script>
 </body>
 </html>
