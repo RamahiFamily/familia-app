@@ -26,6 +26,9 @@
     @media (max-width: 768px) { .grid-3col { grid-template-columns: 1fr; } }
     header { position: sticky; top: 0; z-index: 500; height: 52px; background: rgba(10,10,15,0.92); backdrop-filter: blur(24px); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 16px; box-sizing: border-box; }
     
+    /* Login Screen */
+    #login-screen { position: fixed; inset: 0; z-index: 2000; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    
     /* Settings & Tabs */
     #settings-panel { position: fixed; top: 0; right: -380px; width: 360px; height: 100vh; background: var(--card); border-left: 1px solid var(--border2); z-index: 900; transition: right 0.3s ease; overflow-y: auto; padding: 24px 20px; box-sizing: border-box; }
     #settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 890; display: none; }
@@ -38,7 +41,7 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     
-    /* Modal */
+    /* Quick Add Modal */
     #quick-add-modal { display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; padding:20px; }
     .modal-content { background:var(--card); border:1px solid var(--border); border-radius:16px; width:100%; max-width:600px; max-height:80vh; overflow-y:auto; padding:20px; }
     .quick-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); gap:10px; margin-bottom:20px; }
@@ -52,6 +55,19 @@
   </style>
 </head>
 <body>
+
+<div id="login-screen">
+  <div style="text-align:center; margin-bottom:40px;">
+    <div style="font-family:'Instrument Serif',serif; font-size:3.2rem; letter-spacing:-0.04em;">familia<span style="color:var(--accent); font-style:italic;">.</span></div>
+    <div style="font-family:'DM Mono',monospace; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.15em; color:var(--muted2);">your private family space</div>
+  </div>
+  <div style="background:var(--card); border:1px solid var(--border2); border-radius:20px; padding:32px 28px; max-width:340px; width:100%;">
+    <div style="font-family:'DM Mono',monospace; font-size:0.6rem; text-transform:uppercase; color:var(--muted2); margin-bottom:8px;">Password</div>
+    <input id="login-pwd" type="password" style="width:100%; font-family:'DM Mono',monospace; font-size:1rem; letter-spacing:0.1em; padding:13px 16px; margin-bottom:12px; border-radius:8px; border:1px solid var(--border2); background:var(--card2); color:var(--text);" onkeydown="if(event.key==='Enter') checkLogin()">
+    <button onclick="checkLogin()" style="width:100%; background:var(--accent); font-family:'Syne',sans-serif; font-weight:700; font-size:0.82rem; text-transform:uppercase; padding:14px; border-radius:7px; border:none; color:var(--bg); cursor:pointer;">Enter</button>
+    <div id="login-err" style="font-family:'DM Mono',monospace; font-size:0.68rem; color:var(--red); min-height:18px; margin-top:12px; text-align:center;"></div>
+  </div>
+</div>
 
 <header>
   <div style="font-family:'Instrument Serif',serif; font-size:1.3rem;">familia<span style="color:var(--accent); font-style:italic;">.</span></div>
@@ -282,9 +298,10 @@
 </div>
 
 <div id="toast" style="position:fixed;bottom:24px;left:50%; transform:translateX(-50%) translateY(80px); background:var(--card2);border:1px solid var(--border2); border-radius:50px;padding:9px 20px; font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text); z-index:9999;transition:transform 0.3s;white-space:nowrap; box-shadow:0 8px 32px rgba(0,0,0,0.4);pointer-events:none;"></div>
+
 <audio id="adhan-player" preload="auto" style="display:none;"></audio>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=deterministic_v4"></script>
+<script src="app.js?v=deterministic_v5"></script>
 </body>
 </html>
