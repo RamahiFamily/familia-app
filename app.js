@@ -1,14 +1,13 @@
 // FORCED CACHE CLEAR (Runs once upon upgrading to this new file)
-if (!localStorage.getItem('v9_cache_clear_done')) {
-  localStorage.removeItem('gemini_wisdom_' + new Date().toDateString());
-  localStorage.removeItem('gemini_outfits_' + new Date().toDateString());
-  localStorage.removeItem('gemini_recipes_array_' + new Date().toDateString());
-  // Clear all AI cache to force fresh data
+if (!localStorage.getItem('v10_cache_clear_done')) {
+  // Clear all old AI caches so fresh Gemini calls are made with the fixed model
   const keys = Object.keys(localStorage);
   keys.forEach(k => {
-    if (k.startsWith('f2_ai_')) localStorage.removeItem(k);
+    if (k.startsWith('f2_ai_') || k.startsWith('gemini_') || k.startsWith('f2_gemini')) {
+      localStorage.removeItem(k);
+    }
   });
-  localStorage.setItem('v9_cache_clear_done', '1');
+  localStorage.setItem('v10_cache_clear_done', '1');
 }
 
 const CONFIG = {
@@ -296,19 +295,20 @@ async function fetchStocks() {
 
 // ─── AI CORE: GEMINI ──────────────────────────────────────────────────────────
 async function callGemini(prompt, maxTokens) {
-  maxTokens = maxTokens || 800;
+  maxTokens = maxTokens || 1000;
   try {
+    // gemini-1.5-flash is stable, widely available, and handles JSON well
     var r = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            response_mime_type: "application/json",
             maxOutputTokens: maxTokens,
             temperature: 0.7
+            // NOTE: NO response_mime_type — it causes unterminated JSON on flash models
           }
         })
       }
@@ -316,18 +316,51 @@ async function callGemini(prompt, maxTokens) {
     var d = await r.json();
     if (d.error) {
       console.error('Gemini API Error:', d.error);
-      return { error: d.error.message || 'Invalid API Key or Blocked Request' };
+      return { error: d.error.message || 'Invalid API Key or quota exceeded' };
     }
     if (d.candidates && d.candidates[0] && d.candidates[0].content) {
-      return { text: d.candidates[0].content.parts[0].text.trim() };
+      var raw = d.candidates[0].content.parts[0].text.trim();
+      // Strip markdown code fences if present
+      raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      return { text: raw };
     }
-    return { error: 'Unknown response structure from Google' };
+    // Handle safety blocks
+    if (d.candidates && d.candidates[0] && d.candidates[0].finishReason === 'SAFETY') {
+      return { error: 'Blocked by safety filter. Try rephrasing the prompt.' };
+    }
+    return { error: 'No response from Gemini. Check API key or quota.' };
   } catch(e) {
-    console.error('Fetch Error:', e);
-    return { error: 'Network failed. Check internet or AdBlocker.' };
+    console.error('Gemini Fetch Error:', e);
+    return { error: 'Network error: ' + e.message };
   }
 }
 var callAI = callGemini;
+
+// ─── SAFE JSON PARSER ────────────────────────────────────────────────────────
+// Handles truncated/unterminated JSON by finding the last valid closing bracket
+function safeParseJSON(text) {
+  if (!text) return null;
+  // Clean markdown fences
+  text = text.replace(/^```json\s*/i,'').replace(/^```\s*/i,'').replace(/\s*```$/i,'').trim();
+  // Try direct parse first
+  try { return JSON.parse(text); } catch(e) {}
+  // Try to recover: find last } or ] and truncate there
+  var lastObj = text.lastIndexOf('}');
+  var lastArr = text.lastIndexOf(']');
+  var lastValid = Math.max(lastObj, lastArr);
+  if (lastValid > 0) {
+    try { return JSON.parse(text.substring(0, lastValid + 1)); } catch(e) {}
+  }
+  // Try to find first [ or { and extract from there
+  var firstArr = text.indexOf('[');
+  var firstObj = text.indexOf('{');
+  var start = (firstArr >= 0 && (firstObj < 0 || firstArr < firstObj)) ? firstArr : firstObj;
+  if (start >= 0 && lastValid > start) {
+    try { return JSON.parse(text.substring(start, lastValid + 1)); } catch(e) {}
+  }
+  console.error('safeParseJSON failed on:', text.substring(0, 200));
+  return null;
+}
 
 // ─── AI SHARED CACHE (Supabase-first, localStorage fallback) ─────────────────
 // All AI results are stored in Supabase so every device shares them.
@@ -403,9 +436,12 @@ async function loadIslamicWisdom(elementId) {
 
   if (result && result.text) {
     try {
-      var clean = result.text.replace(/```json|```/g, '').trim();
-      wisdom = JSON.parse(clean);
-      await aiCacheSet('wisdom', wisdom);  // stored in Supabase — all devices share it
+      wisdom = safeParseJSON(result.text);
+      if (wisdom && wisdom.arabic) {
+        await aiCacheSet('wisdom', wisdom);
+      } else {
+        wisdom = { arabic: 'Parse Error', english: 'AI returned an invalid format. Try refreshing.', source: 'System' };
+      }
     } catch(e) {
       wisdom = { arabic: 'Parse Error', english: 'AI returned an invalid format. Try refreshing.', source: 'System' };
     }
@@ -454,18 +490,18 @@ async function loadNewsBrief() {
   if (briefEl) briefEl.innerHTML = '<span style="color:var(--muted2);font-style:italic;font-size:0.7rem;">Generating latest brief...</span>';
 
   var prompt = 'Write a daily briefing with exactly 4 sections: 1. World News, 2. Economy, 3. Soccer, 4. Cars. Each section must be exactly 2-3 sentences. Do not use markdown headers. Return ONLY a valid JSON object with no markdown in this exact schema: {"world":"string","economy":"string","soccer":"string","cars":"string"}';
-  var result = await callAI(prompt, 800);
+  var result = await callAI(prompt, 1200);
 
   if (result && result.text) {
     try {
-      var clean = result.text.replace(/```json|```/g,'').trim();
-      var d = JSON.parse(clean);
+      var d = safeParseJSON(result.text);
+      if (!d || !d.world) throw new Error('Missing fields');
       var html =
         '<div style="margin-bottom:10px;"><b>🌍 World:</b> ' + (d.world||'No data') + '</div>' +
         '<div style="margin-bottom:10px;"><b>📈 Economy:</b> ' + (d.economy||'No data') + '</div>' +
         '<div style="margin-bottom:10px;"><b>⚽ Soccer:</b> ' + (d.soccer||'No data') + '</div>' +
         '<div><b>🚗 Cars:</b> ' + (d.cars||'No data') + '</div>';
-      await aiCacheSet('news', html);  // store HTML string — shared across all devices
+      await aiCacheSet('news', html);
       if (briefEl) briefEl.innerHTML = html;
     } catch(e) {
       if (briefEl) briefEl.innerHTML = '<span style="color:var(--red)">AI failed to format brief: ' + e.message + '</span>';
@@ -486,17 +522,16 @@ async function loadDeals() {
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;">Fetching today\'s deals...</span>';
 
   var prompt = 'Generate 5 realistic grocery store deals for today. One deal per store for these stores: Sam\'s Club, Costco, ALDI, Price Rite, Price Chopper. Make prices realistic for 2025. Return ONLY a valid JSON array with no markdown of exactly 5 objects. Schema: [{"store":"string","item":"string","price":"string","url":"string"}]';
-  var result = await callAI(prompt, 600);
+  var result = await callAI(prompt, 1000);
   var deals = null;
 
   if (result && result.text) {
     try {
-      var clean = result.text.replace(/```json|```/g,'').trim();
-      deals = JSON.parse(clean);
-      if (Array.isArray(deals) && deals.length >= 5) {
-        await aiCacheSet('deals', deals);  // shared across all devices
-      }
-    } catch(e) {}
+      deals = safeParseJSON(result.text);
+      if (Array.isArray(deals) && deals.length >= 3) {
+        await aiCacheSet('deals', deals);
+      } else { deals = null; }
+    } catch(e) { deals = null; }
   }
 
   if (!deals || !Array.isArray(deals)) {
@@ -540,17 +575,16 @@ async function loadOutfits(refresh) {
   if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Generating 10 fresh looks from Zara & H&M...</span>';
 
   var prompt = 'Generate 10 fresh outfit ideas for women inspired by current Zara and H&M styles. Return ONLY a valid JSON array with no markdown of exactly 10 objects. Schema: [{"title":"string", "desc":"string"}]';
-  var result = await callAI(prompt, 1500);
+  var result = await callAI(prompt, 2000);
   var looks = [];
 
   if (result && result.text) {
     try {
-      var clean = result.text.replace(/```json|```/g,'').trim();
-      looks = JSON.parse(clean);
+      looks = safeParseJSON(result.text);
       if (Array.isArray(looks) && looks.length > 0) {
-        await aiCacheSet('outfits', looks);  // shared across all devices
-      }
-    } catch(e) {}
+        await aiCacheSet('outfits', looks);
+      } else { looks = []; }
+    } catch(e) { looks = []; }
   }
 
   if (!looks || looks.length === 0) {
@@ -603,16 +637,15 @@ async function loadRecipe() {
   if (counterEl) counterEl.textContent = 'Generating 5 recipes...';
 
   var prompt = 'Generate 5 different authentic Jordanian/Levantine recipes inspired by the cooking style of Ola Tashman. Return ONLY a valid JSON array with no markdown of exactly 5 objects. Schema MUST be exactly this: [{"title":"string","description":"string","time":45,"servings":4,"ingredients":["string"],"steps":["string"],"tip":"string"}]';
-  var result = await callAI(prompt, 3000);
+  var result = await callAI(prompt, 4000);
 
   if (result && result.text) {
     try {
-      var clean = result.text.replace(/```json|```/g,'').trim();
-      _hayaRecipes = JSON.parse(clean);
+      _hayaRecipes = safeParseJSON(result.text);
       if (Array.isArray(_hayaRecipes) && _hayaRecipes.length > 0) {
-        await aiCacheSet('recipes', _hayaRecipes);  // shared across all devices
-      }
-    } catch(e) {}
+        await aiCacheSet('recipes', _hayaRecipes);
+      } else { _hayaRecipes = []; }
+    } catch(e) { _hayaRecipes = []; }
   }
 
   if (!_hayaRecipes || _hayaRecipes.length === 0) {
