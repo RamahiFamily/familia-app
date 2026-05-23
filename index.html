@@ -171,12 +171,12 @@
         <div id="wisdom-haya" style="min-height:50px;font-style:italic;color:var(--muted2);">Loading...</div>
       </div>
       <div class="card">
-        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Trending Outfits <button onclick="refreshLTK()" style="margin-left:auto; background:transparent; border:1px solid var(--border); color:var(--muted2); font-size:0.6rem; border-radius:4px; cursor:pointer;">↻ Refresh</button></div>
+        <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Trending Outfits <button onclick="refreshOutfits()" style="margin-left:auto; background:transparent; border:1px solid var(--border); color:var(--muted2); font-size:0.6rem; border-radius:4px; cursor:pointer;">↻ Refresh</button></div>
         <div id="outfits-container" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none;"><span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Loading looks...</span></div>
       </div>
       <div class="card">
         <div class="card-title"><span class="dot" style="background:var(--pink)"></span>Beauty Deals Tracker</div>
-        <div id="beauty-deals-container" style="display:flex;flex-direction:column;gap:8px;"><span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Scanning Slickdeals...</span></div>
+        <div id="beauty-deals-container" style="display:flex;flex-direction:column;gap:8px;"><span style="color:var(--muted2);font-size:0.7rem;padding:10px;">Loading deals...</span></div>
       </div>
     </div>
     
@@ -230,7 +230,6 @@
       <div style="font-family:'Instrument Serif',serif; font-size:1.8rem;">Quick Add Items</div>
       <button onclick="document.getElementById('quick-add-modal').style.display='none'" style="background:transparent; border:none; color:var(--muted2); font-size:1.2rem; cursor:pointer;">×</button>
     </div>
-    
     <div style="font-family:'DM Mono',monospace; font-size:0.7rem; color:var(--muted2); margin-bottom:10px; text-transform:uppercase;">Vegetables & Fruits</div>
     <div class="quick-grid">
       <div class="quick-item" onclick="addQuickItem('Tomatoes')"><div class="quick-item-icon">🍅</div><div class="quick-item-name">Tomatoes</div></div>
@@ -240,7 +239,6 @@
       <div class="quick-item" onclick="addQuickItem('Bananas')"><div class="quick-item-icon">🍌</div><div class="quick-item-name">Bananas</div></div>
       <div class="quick-item" onclick="addQuickItem('Apples')"><div class="quick-item-icon">🍎</div><div class="quick-item-name">Apples</div></div>
     </div>
-
     <div style="font-family:'DM Mono',monospace; font-size:0.7rem; color:var(--muted2); margin-bottom:10px; text-transform:uppercase;">Store Specific</div>
     <div class="quick-grid">
       <div class="quick-item" onclick="addQuickItem('ALDI: Milk')"><div class="quick-item-icon">🥛</div><div class="quick-item-name">ALDI Milk</div></div>
@@ -284,8 +282,9 @@
 </div>
 
 <div id="toast" style="position:fixed;bottom:24px;left:50%; transform:translateX(-50%) translateY(80px); background:var(--card2);border:1px solid var(--border2); border-radius:50px;padding:9px 20px; font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--text); z-index:9999;transition:transform 0.3s;white-space:nowrap; box-shadow:0 8px 32px rgba(0,0,0,0.4);pointer-events:none;"></div>
+<audio id="adhan-player" preload="auto" style="display:none;"></audio>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=deterministic_v3"></script>
+<script src="app.js?v=deterministic_v4"></script>
 </body>
 </html>
