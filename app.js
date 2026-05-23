@@ -18,7 +18,7 @@ const CONFIG = {
   WEATHER_CITY:      'Newington,CT,US',
   PHONE:             '1860798577',
   SLIDESHOW_SPEED:   5000,
-  GEMINI_KEY:        'AIzaSyCrHL7ArEX76vBOFjdVzWywWlLRzLKkVX4'
+  GEMINI_KEY:        'AIzaSyA-in8IX5_bDHg312hzp32vSAWWLDa87oI'
 };
 
 // ─── SUPABASE INIT ────────────────────────────────────────────────────────────
@@ -297,9 +297,9 @@ async function fetchStocks() {
 async function callGemini(prompt, maxTokens) {
   maxTokens = maxTokens || 1000;
   try {
-    // gemini-1.5-flash is stable, widely available, and handles JSON well
+    // gemini-2.0-flash is the current stable model on v1beta
     var r = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + CONFIG.GEMINI_KEY,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
