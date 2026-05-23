@@ -1,14 +1,21 @@
 const CONFIG = {
   SUPABASE_URL:      'https://kyhbexbfmbtuhiddtvdb.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5aGJleGJmbWJ0dWhpZGR0dmRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjY0OTgsImV4cCI6MjA5MzY0MjQ5OH0.Rv2FtqZWGtHzHieCS0SmQjnGTEdSXsqrYTYfJrwddMQ',
+  PASSWORD:          'familia2024',
   WEATHER_KEY:       '7a6a9fd1087d7335ccb8d3312177225c',
   WEATHER_CITY:      'Newington,CT,US',
   SLIDESHOW_SPEED:   5000
 };
 
-// Safe Supabase Initialization
-const _sbReady = CONFIG.SUPABASE_URL && CONFIG.SUPABASE_URL !== 'YOUR_SUPABASE_URL';
-const sb = _sbReady ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+// ─── SAFE DATABASE INITIALIZATION ─────────────────────────────────────────────
+let sb = null;
+try {
+  if (typeof window.supabase !== 'undefined' && CONFIG.SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
+    sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  }
+} catch (error) {
+  console.warn("Database init delayed or offline", error);
+}
 
 // ─── LOGIN FLOW ───────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -19,18 +26,25 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function checkLogin() {
-  if (document.getElementById('login-pwd').value === 'familia2024') {
+  const inputEl = document.getElementById('login-pwd');
+  const errorEl = document.getElementById('login-err');
+  
+  if (inputEl.value === CONFIG.PASSWORD) {
     sessionStorage.setItem('f_auth', '1');
     document.getElementById('login-screen').style.display = 'none';
     initAppSafe();
   } else {
-    document.getElementById('login-err').textContent = 'Incorrect password.';
+    errorEl.textContent = 'Incorrect password.';
   }
 }
 
 function initAppSafe() {
-  try { initApp(); } 
-  catch(e) { console.error("Initialization error:", e); showToast("App error, check connection"); }
+  try { 
+    initApp(); 
+  } catch(e) { 
+    console.error("Initialization error:", e); 
+    showToast("Dashboard loading error. Hard refresh page."); 
+  }
 }
 
 // ─── UTILS & UI CONTROLS ──────────────────────────────────────────────────────
@@ -56,7 +70,7 @@ function switchTab(btn) {
   card.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
 }
 
-// ─── STORE & REALTIME SYNC (FIXED) ────────────────────────────────────────────
+// ─── STORE & REALTIME SYNC ────────────────────────────────────────────────────
 const store = {
   async get(key) {
     const local = localStorage.getItem('f2_' + key);
@@ -93,7 +107,7 @@ function initRealtimeSync() {
     }).subscribe();
 }
 
-// ─── ADHAN AUDIO (RESTORED ORIGINAL LOGIC) ────────────────────────────────────
+// ─── ADHAN AUDIO ──────────────────────────────────────────────────────────────
 let _audioCtx = null;
 let _adhanPlayedToday = {};
 
@@ -103,7 +117,10 @@ function unlockAudio() {
     if (_audioCtx.state === 'suspended') { _audioCtx.resume(); } 
   } catch(e) {} 
 }
-['touchstart','touchend','mousedown','click','keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { passive: true, capture: true }));
+
+if (typeof document !== 'undefined') {
+  ['touchstart','touchend','mousedown','click','keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { passive: true, capture: true }));
+}
 
 function handleAdhanUpload(event) {
   var file = event.target.files && event.target.files[0]; if (!file) return;
@@ -209,6 +226,15 @@ function updateCountdown() {
 }
 
 // ─── BUDGET ───────────────────────────────────────────────────────────────────
+async function addBudgetCat() {
+  const name = document.getElementById('b-name').value; const amount = parseFloat(document.getElementById('b-amount').value);
+  if (!name || isNaN(amount)) return;
+  const b = await store.get('budget_items') || [];
+  b.push({name, amount, id: Date.now()}); 
+  await store.set('budget_items', b);
+  document.getElementById('b-name').value = ''; document.getElementById('b-amount').value = ''; renderBudget();
+}
+
 async function renderBudget() {
   let b = await store.get('budget_items') || [];
   const total = b.reduce((s, i) => s + i.amount, 0); 
