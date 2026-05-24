@@ -162,7 +162,7 @@
       </div>
       <div class="card">
         <div class="card-title"><span class="dot"></span>Market & World Brief</div>
-        <div id="news-brief" style="font-family:'Montserrat',sans-serif;font-size:0.78rem;line-height:1.6; color:var(--text);padding:10px;background:var(--card2);border-radius:8px; border-left:3px solid var(--accent);margin-bottom:12px; min-height:48px;">
+        <div id="news-brief" style="font-family:'Montserrat',sans-serif;font-size:0.78rem;line-height:1.6; color:var(--text);padding:10px;background:var(--card2);border-radius:8px; border-left:3px solid var(--accent);margin-bottom:12px; min-height:48px; display:flex; flex-direction:column; gap:10px;">
            <span style="color:var(--muted2);font-style:italic;">Fetching live feeds...</span>
         </div>
       </div>
@@ -295,7 +295,8 @@
         <div style="font-family:'DM Mono',monospace;font-size:0.62rem;color:var(--muted2);" id="sp-adhan-name">No file loaded</div>
       </div>
       <label for="adhan-file-input" style="cursor:pointer;background:var(--card2);border:1px solid var(--border2); color:var(--text);font-family:'DM Mono',monospace;font-size:0.65rem; padding:6px 12px;border-radius:7px;white-space:nowrap;"> Choose MP3 </label>
-      <input type="file" id="adhan-file-input" accept="audio/*,audio/mpeg,.mp3" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;" onchange="handleAdhanUpload(event)">
+      
+      <input type="file" id="adhan-file-input" accept="audio/*,audio/mpeg,.mp3" style="display:none;" onchange="handleAdhanUpload(event)">
     </div>
     <div class="sp-row">
       <div style="font-size:0.8rem;">Test Adhan</div>
@@ -327,6 +328,6 @@
 <audio id="adhan-player" preload="auto" style="display:none;"></audio>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js"></script>
+<script src="app.js?v=force_update"></script>
 </body>
 </html>
