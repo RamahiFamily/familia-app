@@ -13,9 +13,7 @@ try {
   if (typeof window.supabase !== 'undefined' && CONFIG.SUPABASE_URL !== 'YOUR_SUPABASE_URL') {
     sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
   }
-} catch (error) {
-  console.warn("Database init delayed or offline", error);
-}
+} catch (error) { console.warn("Database init delayed", error); }
 
 // ─── LOGIN FLOW ───────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -28,24 +26,14 @@ document.addEventListener('DOMContentLoaded', () => {
 function checkLogin() {
   const inputEl = document.getElementById('login-pwd');
   const errorEl = document.getElementById('login-err');
-  
   if (inputEl.value === CONFIG.PASSWORD) {
     sessionStorage.setItem('f_auth', '1');
     document.getElementById('login-screen').style.display = 'none';
     initAppSafe();
-  } else {
-    errorEl.textContent = 'Incorrect password.';
-  }
+  } else { errorEl.textContent = 'Incorrect password.'; }
 }
 
-function initAppSafe() {
-  try { 
-    initApp(); 
-  } catch(e) { 
-    console.error("Initialization error:", e); 
-    showToast("Dashboard loading error. Hard refresh page."); 
-  }
-}
+function initAppSafe() { try { initApp(); } catch(e) { console.error("Init error:", e); showToast("Dashboard loading error."); } }
 
 // ─── UTILS & UI CONTROLS ──────────────────────────────────────────────────────
 function showToast(msg) {
@@ -86,9 +74,7 @@ const store = {
   async set(key, value) {
     const serialized = JSON.stringify(value);
     localStorage.setItem('f2_' + key, serialized);
-    if (sb) {
-      try { await sb.from('familia_data').upsert({ key: key, value: serialized, updated_at: new Date().toISOString() }, { onConflict: 'key' }); } catch(e) {}
-    }
+    if (sb) { try { await sb.from('familia_data').upsert({ key: key, value: serialized, updated_at: new Date().toISOString() }, { onConflict: 'key' }); } catch(e) {} }
   }
 };
 
@@ -107,7 +93,7 @@ function initRealtimeSync() {
     }).subscribe();
 }
 
-// ─── ADHAN AUDIO ──────────────────────────────────────────────────────────────
+// ─── EXACT ORIGINAL ADHAN LOGIC (COPIED VERBATIM) ─────────────────────────────
 let _audioCtx = null;
 let _adhanPlayedToday = {};
 
@@ -118,30 +104,53 @@ function unlockAudio() {
   } catch(e) {} 
 }
 
-if (typeof document !== 'undefined') {
-  ['touchstart','touchend','mousedown','click','keydown'].forEach(evt => document.addEventListener(evt, unlockAudio, { passive: true, capture: true }));
-}
+['touchstart','touchend','mousedown','click','keydown'].forEach(function(evt) { 
+  document.addEventListener(evt, unlockAudio, { passive: true, capture: true }); 
+});
 
 function handleAdhanUpload(event) {
-  var file = event.target.files && event.target.files[0]; if (!file) return;
+  var file = event.target.files && event.target.files[0];
+  var nameEl = document.getElementById('sp-adhan-name');
+  var msgEl = document.getElementById('adhan-test-msg');
+  if (!file) { if (nameEl) nameEl.textContent = 'No file selected'; return; }
+  if (nameEl) nameEl.textContent = 'Reading...';
   var reader = new FileReader();
-  reader.onload = function(e) { 
-    localStorage.setItem('f_adhan', e.target.result); 
-    var player = document.getElementById('adhan-player');
-    if (player) { player.src = e.target.result; player.load(); }
-    showToast('Adhan audio saved ✓'); 
+  reader.onload = function(e) {
+    var dataUrl = e.target.result; var player = document.getElementById('adhan-player');
+    try { localStorage.setItem('f_adhan', dataUrl); localStorage.setItem('f_adhan_name', file.name); } catch(err) { window._adhanFallback = dataUrl; }
+    player.src = dataUrl; player.load();
+    if (nameEl) nameEl.textContent = '✓ ' + file.name;
+    if (msgEl) msgEl.textContent = 'File loaded — tap Play to test';
+    unlockAudio();
+    var p = player.play();
+    if (p && p.then) {
+      p.then(function() {
+        setTimeout(function() { player.pause(); player.currentTime = 0; if (msgEl) msgEl.textContent = '✓ Ready — will play at prayer time'; }, 150);
+      }).catch(function() { if (msgEl) msgEl.textContent = '✓ Loaded — tap page then test'; });
+    }
+    showToast('Adhan loaded: ' + file.name);
   };
+  reader.onerror = function() { if (nameEl) nameEl.textContent = 'Error reading file'; showToast('Could not read file'); };
   reader.readAsDataURL(file);
 }
 
+function getAdhanSrc() { return localStorage.getItem('f_adhan') || window._adhanFallback || null; }
+
+function restoreAdhan() {
+  var src = getAdhanSrc(); var name = localStorage.getItem('f_adhan_name');
+  if (src) {
+    var player = document.getElementById('adhan-player'); player.src = src; player.load();
+    var nameEl = document.getElementById('sp-adhan-name'); if (nameEl && name) nameEl.textContent = '✓ ' + name;
+  }
+}
+
 function testAdhan() {
-  const src = localStorage.getItem('f_adhan');
-  if (!src) { showToast('Upload audio in Settings first'); return; }
+  var msgEl = document.getElementById('adhan-test-msg'); var src = getAdhanSrc();
+  if (!src) { if (msgEl) msgEl.textContent = 'Upload an MP3 file first'; showToast('Upload an MP3 first'); return; }
   var player = document.getElementById('adhan-player');
   if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
-  unlockAudio();
-  player.currentTime = 0;
-  player.play().catch(e => showToast('Tap screen anywhere first to allow audio'));
+  unlockAudio(); player.currentTime = 0; var p = player.play();
+  if (p && p.then) { p.then(function() { if (msgEl) msgEl.textContent = '▶ Playing...'; }).catch(function(err) { if (msgEl) msgEl.textContent = 'Tap anywhere on page first, then test again'; }); }
 }
 
 function checkAndPlayAdhan() {
@@ -150,21 +159,17 @@ function checkAndPlayAdhan() {
   var now = new Date(); var todayStr = now.toDateString();
   prayers.forEach(function(name) {
     var raw = window.prayerTimings[name]; if (!raw) return;
-    var parts = raw.split(':');
-    var pTime = new Date(); pTime.setHours(parseInt(parts[0]), parseInt(parts[1]), 0, 0);
-    var diffSec = (pTime - now) / 1000;
+    var parts = raw.split(':'); var h = parseInt(parts[0]); var m = parseInt(parts[1]);
+    var pTime = new Date(); pTime.setHours(h, m, 0, 0); var diffSec = (pTime - now) / 1000;
     var flagKey = name + '_' + todayStr;
-    
     if (diffSec >= -5 && diffSec <= 30 && !_adhanPlayedToday[flagKey]) {
-      _adhanPlayedToday[flagKey] = true;
-      var src = localStorage.getItem('f_adhan');
-      if (!src) { showToast('🕌 ' + name + ' time'); return; }
-      
+      _adhanPlayedToday[flagKey] = true; var src = getAdhanSrc();
+      if (!src) { showToast('🕌 ' + name + ' — Upload adhan in Settings'); return; }
       var player = document.getElementById('adhan-player');
       if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
-      unlockAudio(); player.currentTime = 0; 
-      player.play().catch(e => console.log('Autoplay blocked'));
-      showToast('🕌 ' + name + ' — وقت الصلاة');
+      unlockAudio();
+      var doPlay = function() { player.currentTime = 0; var p = player.play(); if (p && p.then) { p.then(function() { showToast('🕌 ' + name + ' — وقت الصلاة'); }).catch(function() { setTimeout(doPlay, 800); }); } };
+      if (_audioCtx && _audioCtx.state === 'suspended') { _audioCtx.resume().then(doPlay).catch(doPlay); } else { doPlay(); }
     }
   });
 }
@@ -247,37 +252,59 @@ async function renderBudget() {
   }).join('');
 }
 
-// ─── NEWS & VIDEO ─────────────────────────────────────────────────────────────
+// ─── MULTI-FEED MARKET & WORLD BRIEF ──────────────────────────────────────────
 async function loadNewsBrief() {
-  try {
-    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=http%3A%2F%2Ffeeds.bbci.co.uk%2Fnews%2Fworld%2Frss.xml');
-    const data = await res.json();
-    if(data.items && data.items.length > 0) {
-      document.getElementById('news-brief').innerHTML = `
-        <div><b>🌍 World:</b> <span style="color:var(--muted2);">${data.items[0].title}</span></div>
-        <div style="font-size:0.6rem; color:var(--muted); margin-top:5px; text-align:right;">BBC News RSS</div>
-      `;
+  const briefEl = document.getElementById('news-brief');
+  if (!briefEl) return;
+  
+  briefEl.innerHTML = '<span style="color:var(--muted2);font-style:italic;font-size:0.7rem;">Fetching latest feeds...</span>';
+
+  const feeds = [
+    { name: '🌍 World', url: 'http://feeds.bbci.co.uk/news/world/rss.xml' },
+    { name: '⚽ Soccer', url: 'https://www.espn.com/espn/rss/soccer/news' },
+    { name: '🚗 Cars', url: 'https://www.motortrend.com/news/feed/' }
+  ];
+
+  let html = '';
+  for (let feed of feeds) {
+    try {
+      const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}`);
+      const data = await res.json();
+      const title = (data.items && data.items.length > 0) ? data.items[0].title : 'Feed temporarily unavailable';
+      html += `<div style="margin-bottom:10px;"><b>${feed.name}:</b> <span style="color:var(--muted2);">${title}</span></div>`;
+    } catch(e) {
+      html += `<div style="margin-bottom:10px;"><b>${feed.name}:</b> <span style="color:var(--red);">Feed temporarily unavailable</span></div>`;
     }
-  } catch(e) { document.getElementById('news-brief').innerHTML = '<span style="color:var(--red)">Feed unavailable.</span>'; }
+  }
+  html += `<div style="font-size:0.55rem; color:var(--muted); text-align:right;">Live RSS Data</div>`;
+  briefEl.innerHTML = html;
 }
 
 function loadCNBC() {
   const c = document.getElementById('cnbc-container'); if(c) c.innerHTML = '<iframe src="https://www.youtube.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg&autoplay=1&mute=0" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>';
 }
 
-// ─── OUTFITS (WITH LINKS) & BEAUTY DEALS (WITH PICTURES/PRICE) ────────────────
+// ─── DATE-SEEDED OUTFITS & BEAUTY DEALS ───────────────────────────────────────
 const OUTFIT_DATA = [
   { img: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80', link: 'https://www.zara.com/us/en/woman-new-in-l1180.html' },
   { img: 'https://images.unsplash.com/photo-1434389678369-182fc221ac11?w=400&q=80', link: 'https://www2.hm.com/en_us/women/new-arrivals/clothes.html' },
   { img: 'https://images.unsplash.com/photo-1485230895905-eb56f66378ea?w=400&q=80', link: 'https://www.nordstrom.com/browse/women/clothing/new' },
   { img: 'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=400&q=80', link: 'https://www.zara.com/us/en/woman-dresses-l1066.html' },
   { img: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&q=80', link: 'https://www.aritzia.com/us/en/new' },
-  { img: 'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80', link: 'https://www.mango.com/us/women/new-in_c52994437' }
+  { img: 'https://images.unsplash.com/photo-1550639525-c97d455acf70?w=400&q=80', link: 'https://www.mango.com/us/women/new-in_c52994437' },
+  { img: 'https://images.unsplash.com/photo-1502716119720-b23a93e5fe1b?w=400&q=80', link: 'https://www.zara.com/us/' },
+  { img: 'https://images.unsplash.com/photo-1529139574466-a303027c1d8b?w=400&q=80', link: 'https://www2.hm.com/en_us/index.html' }
 ];
 
 function refreshOutfits() {
-  const shuffled = OUTFIT_DATA.sort(() => 0.5 - Math.random()).slice(0, 4);
-  document.getElementById('outfits-container').innerHTML = shuffled.map(item => `
+  // mathematical seed so it shifts to 4 fresh outfits every midnight automatically
+  const daySeed = Math.floor(Date.now() / 86400000); 
+  const startIndex = daySeed % OUTFIT_DATA.length;
+  
+  const dailyLooks = [];
+  for (let i = 0; i < 4; i++) { dailyLooks.push(OUTFIT_DATA[(startIndex + i) % OUTFIT_DATA.length]); }
+
+  document.getElementById('outfits-container').innerHTML = dailyLooks.map(item => `
     <a href="${item.link}" target="_blank" style="flex-shrink:0;width:120px;background:var(--card2);border-radius:10px;overflow:hidden;border:1px solid var(--border);text-decoration:none;display:block;">
       <img src="${item.img}" style="width:100%;height:160px;object-fit:cover;display:block;">
       <div style="padding:6px;text-align:center;"><span style="font-family:'DM Mono',monospace;font-size:0.5rem;color:var(--muted2);">View Item ↗</span></div>
@@ -308,7 +335,7 @@ function loadBeautyDeals() {
   `).join('');
 }
 
-// ─── OLA TASHMAN RECIPES (BULLETPROOF FALLBACK) ───────────────────────────────
+// ─── TRIPLE-TIER BULLETPROOF RECIPE FETCHING ──────────────────────────────────
 var _hayaRecipes = [];
 var _hayaRecipeIdx = 0;
 
@@ -320,18 +347,47 @@ async function loadRecipe() {
   ];
 
   try {
-    const channelId = 'UChnE0G0QoWn-z1X1T3A97-g'; 
-    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=' + channelId)}`);
+    // TIER 1: rss2json
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UChnE0G0QoWn-z1X1T3A97-g')}`);
     const data = await res.json();
+    
     if (data && data.items && data.items.length > 0) {
       _hayaRecipes = data.items.slice(0, 5).map(item => ({
         title: item.title, description: "Latest from Ola Tashman", videoUrl: item.link, img: item.thumbnail, 
         ingredients: ["Tap the link below to watch the video for exact ingredients."], tip: "Watch Full Recipe Video"
       }));
-    } else { _hayaRecipes = fallback; }
-  } catch(e) { _hayaRecipes = fallback; } 
+    } else { 
+      throw new Error("RSS2JSON returned empty"); 
+    }
+  } catch(e1) { 
+    try {
+      // TIER 2: AllOrigins Raw XML Parse (bypasses rss2json blocks)
+      const res2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UChnE0G0QoWn-z1X1T3A97-g')}`);
+      const data2 = await res2.json();
+      const xml = new DOMParser().parseFromString(data2.contents, "text/xml");
+      const entries = Array.from(xml.querySelectorAll("entry"));
+      
+      if (entries.length > 0) {
+          _hayaRecipes = entries.slice(0, 5).map(entry => {
+              const title = entry.querySelector("title").textContent;
+              const link = entry.querySelector("link").getAttribute("href");
+              const mediaGroup = entry.getElementsByTagNameNS("*", "group")[0];
+              const thumb = mediaGroup ? mediaGroup.getElementsByTagNameNS("*", "thumbnail")[0].getAttribute("url") : "";
+              return {
+                  title: title, description: "Latest from Ola Tashman", videoUrl: link, img: thumb,
+                  ingredients: ["Tap the link below to watch the video for exact ingredients."], tip: "Watch Full Recipe Video"
+              };
+          });
+      } else {
+          throw new Error("AllOrigins parsing failed");
+      }
+    } catch(e2) {
+      // TIER 3: Local Fallback Data
+      _hayaRecipes = fallback; 
+    }
+  } 
 
-  if (_hayaRecipes.length > 0) renderRecipe(_hayaRecipes[0]);
+  renderRecipe(_hayaRecipes[0]);
 }
 
 function changeRecipe(dir) {
@@ -341,13 +397,17 @@ function changeRecipe(dir) {
 }
 
 function renderRecipe(recipe) {
-  document.getElementById('recipe-img').src = recipe.img;
-  document.getElementById('recipe-title').textContent = recipe.title;
-  document.getElementById('recipe-counter').textContent = `Recipe ${_hayaRecipeIdx + 1} of ${_hayaRecipes.length}`;
-  document.getElementById('recipe-ingredients').innerHTML = recipe.ingredients.map(i => `<div style="font-size:0.7rem; color:var(--muted2); padding:2px 0;">• ${i}</div>`).join('');
+  if(!recipe) return;
+  const imgEl = document.getElementById('recipe-img'); if(imgEl) imgEl.src = recipe.img;
+  const titleEl = document.getElementById('recipe-title'); if(titleEl) titleEl.textContent = recipe.title;
+  const counterEl = document.getElementById('recipe-counter'); if(counterEl) counterEl.textContent = `Recipe ${_hayaRecipeIdx + 1} of ${_hayaRecipes.length}`;
+  const ingEl = document.getElementById('recipe-ingredients'); if(ingEl) ingEl.innerHTML = recipe.ingredients.map(i => `<div style="font-size:0.7rem; color:var(--muted2); padding:2px 0;">• ${i}</div>`).join('');
+  
   const tipEl = document.getElementById('recipe-tip');
-  tipEl.innerHTML = `<a href="${recipe.videoUrl}" target="_blank" style="color:var(--purple); text-decoration:none; font-weight:bold;">▶ ${recipe.tip}</a>`;
-  tipEl.style.display = 'block';
+  if(tipEl) {
+    tipEl.innerHTML = `<a href="${recipe.videoUrl}" target="_blank" style="color:var(--purple); text-decoration:none; font-weight:bold;">▶ ${recipe.tip}</a>`;
+    tipEl.style.display = 'block';
+  }
 }
 
 // ─── LISTS & GOALS ────────────────────────────────────────────────────────────
@@ -412,6 +472,7 @@ function initApp() {
   }, 1000);
   
   initRealtimeSync();
+  restoreAdhan(); // Re-attaches original uploaded MP3
   loadPrayers();
   setInterval(() => { updateCountdown(); checkAndPlayAdhan(); }, 1000);
   
@@ -425,8 +486,10 @@ function initApp() {
   const wm = document.getElementById('wisdom-mahmoud'); if(wm) wm.innerHTML = wHtml; 
   const wh = document.getElementById('wisdom-haya'); if(wh) wh.innerHTML = wHtml;
 
-  refreshOutfits(); loadBeautyDeals();
-  setTimeout(loadNewsBrief, 1000); setTimeout(loadRecipe, 2000);
+  refreshOutfits(); 
+  loadBeautyDeals();
+  setTimeout(loadNewsBrief, 1000); 
+  setTimeout(loadRecipe, 2000);
 
   renderList('grocery_list', 'groc-list');
   renderTaskList('todo_mahmoud', 'm-todo-list'); renderTaskList('todo_haya', 'h-todo-list');
