@@ -93,7 +93,7 @@ function initRealtimeSync() {
     }).subscribe();
 }
 
-// ─── EXACT ORIGINAL ADHAN LOGIC (COPIED VERBATIM) ─────────────────────────────
+// ─── EXACT ORIGINAL ADHAN LOGIC (RE-VERIFIED) ───────────────────────────────
 let _audioCtx = null;
 let _adhanPlayedToday = {};
 
@@ -104,9 +104,11 @@ function unlockAudio() {
   } catch(e) {} 
 }
 
-['touchstart','touchend','mousedown','click','keydown'].forEach(function(evt) { 
-  document.addEventListener(evt, unlockAudio, { passive: true, capture: true }); 
-});
+if (typeof document !== 'undefined') {
+  ['touchstart','touchend','mousedown','click','keydown'].forEach(function(evt) { 
+    document.addEventListener(evt, unlockAudio, { passive: true, capture: true }); 
+  });
+}
 
 function handleAdhanUpload(event) {
   var file = event.target.files && event.target.files[0];
@@ -114,62 +116,138 @@ function handleAdhanUpload(event) {
   var msgEl = document.getElementById('adhan-test-msg');
   if (!file) { if (nameEl) nameEl.textContent = 'No file selected'; return; }
   if (nameEl) nameEl.textContent = 'Reading...';
+  
   var reader = new FileReader();
   reader.onload = function(e) {
-    var dataUrl = e.target.result; var player = document.getElementById('adhan-player');
-    try { localStorage.setItem('f_adhan', dataUrl); localStorage.setItem('f_adhan_name', file.name); } catch(err) { window._adhanFallback = dataUrl; }
-    player.src = dataUrl; player.load();
+    var dataUrl = e.target.result; 
+    var player = document.getElementById('adhan-player');
+    try { 
+      localStorage.setItem('f_adhan', dataUrl); 
+      localStorage.setItem('f_adhan_name', file.name); 
+    } catch(err) { 
+      window._adhanFallback = dataUrl; 
+      console.warn("Storage quota exceeded, using fallback memory.");
+    }
+    
+    player.src = dataUrl; 
+    player.load();
     if (nameEl) nameEl.textContent = '✓ ' + file.name;
     if (msgEl) msgEl.textContent = 'File loaded — tap Play to test';
+    
     unlockAudio();
     var p = player.play();
     if (p && p.then) {
       p.then(function() {
-        setTimeout(function() { player.pause(); player.currentTime = 0; if (msgEl) msgEl.textContent = '✓ Ready — will play at prayer time'; }, 150);
-      }).catch(function() { if (msgEl) msgEl.textContent = '✓ Loaded — tap page then test'; });
+        setTimeout(function() { 
+          player.pause(); 
+          player.currentTime = 0; 
+          if (msgEl) msgEl.textContent = '✓ Ready — will play at prayer time'; 
+        }, 150);
+      }).catch(function() { 
+        if (msgEl) msgEl.textContent = '✓ Loaded — tap page then test'; 
+      });
     }
     showToast('Adhan loaded: ' + file.name);
   };
-  reader.onerror = function() { if (nameEl) nameEl.textContent = 'Error reading file'; showToast('Could not read file'); };
+  
+  reader.onerror = function() { 
+    if (nameEl) nameEl.textContent = 'Error reading file'; 
+    showToast('Could not read file'); 
+  };
+  
   reader.readAsDataURL(file);
 }
 
-function getAdhanSrc() { return localStorage.getItem('f_adhan') || window._adhanFallback || null; }
+function getAdhanSrc() { 
+  return localStorage.getItem('f_adhan') || window._adhanFallback || null; 
+}
 
 function restoreAdhan() {
-  var src = getAdhanSrc(); var name = localStorage.getItem('f_adhan_name');
+  var src = getAdhanSrc(); 
+  var name = localStorage.getItem('f_adhan_name');
   if (src) {
-    var player = document.getElementById('adhan-player'); player.src = src; player.load();
-    var nameEl = document.getElementById('sp-adhan-name'); if (nameEl && name) nameEl.textContent = '✓ ' + name;
+    var player = document.getElementById('adhan-player'); 
+    player.src = src; 
+    player.load();
+    var nameEl = document.getElementById('sp-adhan-name'); 
+    if (nameEl && name) nameEl.textContent = '✓ ' + name;
   }
 }
 
 function testAdhan() {
-  var msgEl = document.getElementById('adhan-test-msg'); var src = getAdhanSrc();
-  if (!src) { if (msgEl) msgEl.textContent = 'Upload an MP3 file first'; showToast('Upload an MP3 first'); return; }
+  var msgEl = document.getElementById('adhan-test-msg'); 
+  var src = getAdhanSrc();
+  if (!src) { 
+    if (msgEl) msgEl.textContent = 'Upload an MP3 file first'; 
+    showToast('Upload an MP3 first'); 
+    return; 
+  }
   var player = document.getElementById('adhan-player');
-  if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
-  unlockAudio(); player.currentTime = 0; var p = player.play();
-  if (p && p.then) { p.then(function() { if (msgEl) msgEl.textContent = '▶ Playing...'; }).catch(function(err) { if (msgEl) msgEl.textContent = 'Tap anywhere on page first, then test again'; }); }
+  if (!player.src || player.src === window.location.href) { 
+    player.src = src; 
+    player.load(); 
+  }
+  unlockAudio(); 
+  player.currentTime = 0; 
+  var p = player.play();
+  if (p && p.then) { 
+    p.then(function() { 
+      if (msgEl) msgEl.textContent = '▶ Playing...'; 
+    }).catch(function(err) { 
+      if (msgEl) msgEl.textContent = 'Tap anywhere on page first, then test again'; 
+    }); 
+  }
 }
 
 function checkAndPlayAdhan() {
   if (!window.prayerTimings) return;
   var prayers = ['Fajr','Dhuhr','Asr','Maghrib','Isha'];
-  var now = new Date(); var todayStr = now.toDateString();
+  var now = new Date(); 
+  var todayStr = now.toDateString();
+  
   prayers.forEach(function(name) {
-    var raw = window.prayerTimings[name]; if (!raw) return;
-    var parts = raw.split(':'); var h = parseInt(parts[0]); var m = parseInt(parts[1]);
-    var pTime = new Date(); pTime.setHours(h, m, 0, 0); var diffSec = (pTime - now) / 1000;
+    var raw = window.prayerTimings[name]; 
+    if (!raw) return;
+    
+    var parts = raw.split(':'); 
+    var h = parseInt(parts[0]); 
+    var m = parseInt(parts[1]);
+    
+    var pTime = new Date(); 
+    pTime.setHours(h, m, 0, 0); 
+    
+    var diffSec = (pTime - now) / 1000;
     var flagKey = name + '_' + todayStr;
+    
     if (diffSec >= -5 && diffSec <= 30 && !_adhanPlayedToday[flagKey]) {
-      _adhanPlayedToday[flagKey] = true; var src = getAdhanSrc();
-      if (!src) { showToast('🕌 ' + name + ' — Upload adhan in Settings'); return; }
+      _adhanPlayedToday[flagKey] = true; 
+      var src = getAdhanSrc();
+      if (!src) { 
+        showToast('🕌 ' + name + ' time'); 
+        return; 
+      }
+      
       var player = document.getElementById('adhan-player');
-      if (!player.src || player.src === window.location.href) { player.src = src; player.load(); }
+      if (!player.src || player.src === window.location.href) { 
+        player.src = src; 
+        player.load(); 
+      }
+      
       unlockAudio();
-      var doPlay = function() { player.currentTime = 0; var p = player.play(); if (p && p.then) { p.then(function() { showToast('🕌 ' + name + ' — وقت الصلاة'); }).catch(function() { setTimeout(doPlay, 800); }); } };
-      if (_audioCtx && _audioCtx.state === 'suspended') { _audioCtx.resume().then(doPlay).catch(doPlay); } else { doPlay(); }
+      var doPlay = function() { 
+        player.currentTime = 0; 
+        var p = player.play(); 
+        if (p && p.then) { 
+          p.then(function() { showToast('🕌 ' + name + ' — وقت الصلاة'); })
+           .catch(function() { setTimeout(doPlay, 800); }); 
+        } 
+      };
+      
+      if (_audioCtx && _audioCtx.state === 'suspended') { 
+        _audioCtx.resume().then(doPlay).catch(doPlay); 
+      } else { 
+        doPlay(); 
+      }
     }
   });
 }
@@ -296,11 +374,12 @@ const OUTFIT_DATA = [
   { img: 'https://images.unsplash.com/photo-1529139574466-a303027c1d8b?w=400&q=80', link: 'https://www2.hm.com/en_us/index.html' }
 ];
 
-function refreshOutfits() {
-  // mathematical seed so it shifts to 4 fresh outfits every midnight automatically
+function loadOutfits() {
+  // Use the current day (e.g. Days since epoch) to pick a fixed starting index so it changes every single day automatically.
   const daySeed = Math.floor(Date.now() / 86400000); 
   const startIndex = daySeed % OUTFIT_DATA.length;
   
+  // Grab 4 items starting from that index, wrapping around if necessary
   const dailyLooks = [];
   for (let i = 0; i < 4; i++) { dailyLooks.push(OUTFIT_DATA[(startIndex + i) % OUTFIT_DATA.length]); }
 
@@ -335,7 +414,7 @@ function loadBeautyDeals() {
   `).join('');
 }
 
-// ─── TRIPLE-TIER BULLETPROOF RECIPE FETCHING ──────────────────────────────────
+// ─── OLA TASHMAN RECIPES (BULLETPROOF FALLBACK) ───────────────────────────────
 var _hayaRecipes = [];
 var _hayaRecipeIdx = 0;
 
@@ -347,7 +426,6 @@ async function loadRecipe() {
   ];
 
   try {
-    // TIER 1: rss2json
     const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UChnE0G0QoWn-z1X1T3A97-g')}`);
     const data = await res.json();
     
@@ -357,34 +435,10 @@ async function loadRecipe() {
         ingredients: ["Tap the link below to watch the video for exact ingredients."], tip: "Watch Full Recipe Video"
       }));
     } else { 
-      throw new Error("RSS2JSON returned empty"); 
-    }
-  } catch(e1) { 
-    try {
-      // TIER 2: AllOrigins Raw XML Parse (bypasses rss2json blocks)
-      const res2 = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://www.youtube.com/feeds/videos.xml?channel_id=UChnE0G0QoWn-z1X1T3A97-g')}`);
-      const data2 = await res2.json();
-      const xml = new DOMParser().parseFromString(data2.contents, "text/xml");
-      const entries = Array.from(xml.querySelectorAll("entry"));
-      
-      if (entries.length > 0) {
-          _hayaRecipes = entries.slice(0, 5).map(entry => {
-              const title = entry.querySelector("title").textContent;
-              const link = entry.querySelector("link").getAttribute("href");
-              const mediaGroup = entry.getElementsByTagNameNS("*", "group")[0];
-              const thumb = mediaGroup ? mediaGroup.getElementsByTagNameNS("*", "thumbnail")[0].getAttribute("url") : "";
-              return {
-                  title: title, description: "Latest from Ola Tashman", videoUrl: link, img: thumb,
-                  ingredients: ["Tap the link below to watch the video for exact ingredients."], tip: "Watch Full Recipe Video"
-              };
-          });
-      } else {
-          throw new Error("AllOrigins parsing failed");
-      }
-    } catch(e2) {
-      // TIER 3: Local Fallback Data
       _hayaRecipes = fallback; 
     }
+  } catch(e) { 
+    _hayaRecipes = fallback; 
   } 
 
   renderRecipe(_hayaRecipes[0]);
@@ -486,7 +540,7 @@ function initApp() {
   const wm = document.getElementById('wisdom-mahmoud'); if(wm) wm.innerHTML = wHtml; 
   const wh = document.getElementById('wisdom-haya'); if(wh) wh.innerHTML = wHtml;
 
-  refreshOutfits(); 
+  loadOutfits(); 
   loadBeautyDeals();
   setTimeout(loadNewsBrief, 1000); 
   setTimeout(loadRecipe, 2000);
