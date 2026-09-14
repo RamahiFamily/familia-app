@@ -1,6 +1,6 @@
 const CONFIG = {
   SUPABASE_URL:      'https://kyhbexbfmbtuhiddtvdb.supabase.co',
-  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5aGJleGJmbWJ0dWhpZGR0dmRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjY0OTgsImV4cCI6MjA5MzY0MjQ5OH0.Rv2FtqZWGt_QZ2d0vAz5K8x9QzF5e6m8Qp0R1NvKh2s',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5aGJleGJmbWJ0dWhpZGR0dmRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjY0OTgsImV4cCI6MjA5MzY0MjQ5OH0.Rv2FtqZWGt[...]',
   PASSWORD:          'familia2024',
   WEATHER_KEY:       '7a6a9fd1087d7335ccb8d3312177225c',
   WEATHER_CITY:      'Newington,CT,US',
@@ -91,6 +91,18 @@ if (typeof document !== 'undefined') {
   });
 }
 
+function updateAdhanStatus() {
+  const nameEl = document.getElementById('sp-adhan-name');
+  if (!nameEl) return;
+  
+  const name = localStorage.getItem('f_adhan_name');
+  if (name) {
+    nameEl.textContent = '✓ ' + name;
+  } else {
+    nameEl.textContent = 'No adhan file loaded';
+  }
+}
+
 function handleAdhanUpload(event) {
   var file = event.target.files && event.target.files[0];
   var nameEl = document.getElementById('sp-adhan-name');
@@ -150,9 +162,8 @@ function restoreAdhan() {
     var player = document.getElementById('adhan-player'); 
     player.src = src; 
     player.load();
-    var nameEl = document.getElementById('sp-adhan-name'); 
-    if (nameEl && name) nameEl.textContent = '✓ ' + name;
   }
+  updateAdhanStatus();
 }
 
 function testAdhan() {
@@ -200,7 +211,8 @@ function checkAndPlayAdhan() {
     var diffSec = (pTime - now) / 1000;
     var flagKey = name + '_' + todayStr;
     
-    if (diffSec >= -5 && diffSec <= 30 && !_adhanPlayedToday[flagKey]) {
+    // FIXED: Play exactly at prayer time (0 to 5 seconds after, not -5 to +30)
+    if (diffSec >= 0 && diffSec <= 5 && !_adhanPlayedToday[flagKey]) {
       _adhanPlayedToday[flagKey] = true; 
       var src = getAdhanSrc();
       if (!src) { 
@@ -253,7 +265,7 @@ async function loadWeather() {
     const data = await res.json();
     if(data.list) {
       const current = data.list[0];
-      const html = `<div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-family:'Instrument Serif',serif; font-size:2.8rem; line-height:1;">${Math.round(current.main.temp)}°</div><div style="text-align:right;"><div style="font-size:0.85rem; color:var(--muted2);">${current.weather[0].main}</div><div style="font-size:0.7rem; color:var(--muted);">Feels ${Math.round(current.main.feels_like)}°</div></div></div>`;
+      const html = `<div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-family:'Instrument Serif',serif; font-size:2.8rem; line-height:1;">${Math.round(current.main.temp)}°</div><div style="font-size:0.9rem; line-height:1.3; text-transform:capitalize;">${current.weather[0].main}</div></div>`;
       document.querySelectorAll('.weather-basic').forEach(el => el.innerHTML = html);
     }
   } catch(e) { console.warn("Weather load error:", e); }
@@ -270,7 +282,7 @@ async function loadPrayers() {
       const grid = document.getElementById('prayer-grid');
       grid.innerHTML = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].map(name => {
         let [h,m] = data.data.timings[name].split(':'); let hh = parseInt(h); const ampm = hh >= 12 ? 'PM' : 'AM'; hh = hh % 12 || 12;
-        return `<div style="display:flex; justify-content:space-between; font-family:'DM Mono',monospace; font-size:0.75rem; padding:6px; background:rgba(245,158,11,0.1); border-radius:6px; border:1px solid rgba(245,158,11,0.15);"><span style="color:var(--muted2); text-transform:uppercase;">${name}</span><span style="color:var(--gold); font-weight:bold;">${hh}:${m} ${ampm}</span></div>`;
+        return `<div style="display:flex; justify-content:space-between; font-family:'DM Mono',monospace; font-size:0.75rem; padding:6px; background:rgba(245,158,11,0.1); border-radius:6px; border:1px solid rgba(245,158,11,0.3);"><span>${name}</span><span>${hh}:${m} ${ampm}</span></div>`;
       }).join('');
       updateCountdown();
     }
@@ -287,7 +299,7 @@ function updateCountdown() {
   });
   if(next) {
     const hrs = Math.floor(minDiff/3600000); const mins = Math.floor((minDiff%3600000)/60000); const secs = Math.floor((minDiff%60000)/1000);
-    document.getElementById('prayer-countdown').innerHTML = `<div style="font-family:'DM Mono',monospace; font-size:0.7rem; text-transform:uppercase; color:var(--text); margin-bottom:4px;">Next: <span style="color:var(--gold);">${next}</span></div><div style="font-size:1.3rem; color:var(--gold); font-weight:bold;">${String(hrs).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}</div>`;
+    document.getElementById('prayer-countdown').innerHTML = `<div style="font-family:'DM Mono',monospace; font-size:0.7rem; text-transform:uppercase; color:var(--text); margin-bottom:4px;">Next: ${next}</div><div style="font-family:'DM Mono',monospace; font-size:1.1rem; font-weight:bold; color:var(--accent);">${hrs.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}</div>`;
   }
 }
 
@@ -328,12 +340,8 @@ function initApp() {
   
   initRealtimeSync();
   
-  // Load Adhan with status
+  // FIXED: Load Adhan and immediately update status
   restoreAdhan();
-  var nameEl = document.getElementById('sp-adhan-name');
-  if (nameEl && !getAdhanSrc()) {
-    nameEl.textContent = '⏳ Loading adhan...';
-  }
   
   // Load Prayers with status
   var countdownEl = document.getElementById('prayer-countdown');
